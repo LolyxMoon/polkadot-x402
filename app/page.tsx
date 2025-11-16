@@ -180,6 +180,9 @@ export default function Home() {
             Start with setup, stay for the API reference. Both are written like a runbook, not a brochure.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="/demo" className="btn btn-primary text-base">
+              Try Demo
+            </a>
             <a href="/docs" className="btn btn-primary text-base">
               Open documentation
             </a>

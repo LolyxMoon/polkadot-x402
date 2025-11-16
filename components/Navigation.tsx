@@ -31,6 +31,16 @@ export default function Navigation() {
               Home
             </Link>
             <Link
+              href="/demo"
+              className={`text-sm font-medium tracking-widest transition-colors ${
+                pathname === '/demo'
+                  ? 'text-[color:var(--tone-light)]'
+                  : 'text-[color:var(--tone-muted)] hover:text-[color:var(--tone-light)]'
+              }`}
+            >
+              Demo
+            </Link>
+            <Link
               href="/docs"
               className={`text-sm font-medium tracking-widest transition-colors ${
                 pathname === '/docs'
