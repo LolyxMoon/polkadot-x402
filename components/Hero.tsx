@@ -8,12 +8,12 @@ export default function Hero() {
               Polkadot · x402
             </p>
             <h1 className="text-4xl md:text-5xl lg:text-[56px] leading-[1.1] font-semibold text-[color:var(--tone-light)] mb-10">
-              Deterministic x402 facilitation with a two-tone control surface.
+              Accept blockchain payments with HTTP 402.
             </h1>
             <p className="text-lg md:text-xl text-[color:var(--tone-muted)] max-w-2xl mb-10">
-              A complete x402 payment facilitator for Polkadot Hub TestNet. Built-in SDK provides
-              verification, settlement, and client-side payment handling. Native PAS token transfers
-              with automatic 402 response handling. Production-ready facilitator endpoints and axios interceptor.
+              A payment facilitator for Polkadot Hub TestNet that handles HTTP 402 Payment Required responses. 
+              Automatically verifies payments, settles transactions on-chain, and includes a client SDK that 
+              handles the entire payment flow. Works with native PAS tokens.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <a href="/docs" className="btn btn-primary">
