@@ -1,5 +1,5 @@
 /**
- * GET /api/supported
+ * GET /api/facilitator/supported
  * Returns the payment kinds supported by this facilitator
  * 
  * Response format per x402 protocol:
@@ -7,7 +7,7 @@
  *   {
  *     "x402Version": 1,
  *     "scheme": "exact",
- *     "network": "base-sepolia",
+ *     "network": "polkadot-hub-testnet",
  *     "extra": {}
  *   }
  * ]
@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { SupportedPayment } from '@/types/x402';
-import { getSupportedNetworks, STANDARD_NETWORKS } from '@/lib/evm/networks';
+import { getSupportedNetworks } from '@/lib/evm/networks';
 import { env } from '@/lib/env';
 
 export async function GET(request: NextRequest) {
@@ -32,29 +32,6 @@ export async function GET(request: NextRequest) {
         scheme: 'exact',
         network,
         extra: {},
-      });
-    }
-
-    // Add custom chain if configured
-    if (env.CHAIN_ID > 0 && env.CHAIN_RPC_URL) {
-      // Use network name from env or construct from chain ID
-      const customNetworkName = env.CHAIN_NAME 
-        ? env.CHAIN_NAME.toLowerCase().replace(/\s+/g, '-')
-        : `custom-chain-${env.CHAIN_ID}`;
-
-      supportedPayments.push({
-        x402Version: 1,
-        scheme: 'exact',
-        network: customNetworkName,
-        extra: {
-          chainId: env.CHAIN_ID,
-          rpcUrl: env.CHAIN_RPC_URL,
-          nativeCurrency: {
-            name: env.NATIVE_CURRENCY_NAME,
-            symbol: env.NATIVE_CURRENCY_SYMBOL,
-            decimals: env.NATIVE_CURRENCY_DECIMALS,
-          },
-        },
       });
     }
 

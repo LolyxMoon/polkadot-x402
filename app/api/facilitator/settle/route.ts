@@ -1,6 +1,6 @@
 /**
- * GET /api/settle - Returns information about the settle endpoint
- * POST /api/settle - Settles an x402 payment by signing and broadcasting the transaction
+ * GET /api/facilitator/settle - Returns information about the settle endpoint
+ * POST /api/facilitator/settle - Settles an x402 payment by signing and broadcasting the transaction
  * 
  * Request body:
  * {
@@ -8,7 +8,7 @@
  *   "details": {
  *     "x402Version": 1,
  *     "scheme": "exact",
- *     "network": "base-sepolia",
+ *     "network": "polkadot-hub-testnet",
  *     "extra": {}
  *   }
  * }
@@ -32,7 +32,7 @@ import { settleX402Payment } from '@/lib/x402/settle';
 export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
-      endpoint: '/api/settle',
+      endpoint: '/api/facilitator/settle',
       description: 'Settles x402 payments by signing and broadcasting transactions',
       methods: ['GET', 'POST'],
       requestFormat: {
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
         details: {
           x402Version: 'number (must be 1)',
           scheme: 'string (e.g., "exact")',
-          network: 'string (e.g., "base-sepolia")',
+          network: 'string (e.g., "polkadot-hub-testnet")',
           extra: 'object (optional, network-specific configuration)',
         },
       },
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         transactionHash: 'string (optional, if success is true)',
         error: 'string (optional, if success is false)',
       },
-      warning: 'This endpoint requires a valid EVM_PRIVATE_KEY and sufficient funds for gas fees',
+      warning: 'This endpoint requires a valid FACILITATOR_PRIVATE_KEY and sufficient funds for gas fees',
     },
     {
       status: 200,

@@ -130,13 +130,13 @@ npm start`} language="bash" />
                   <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-dark)]/50 mb-2">
                     GET
                   </p>
-                  <h3 className="text-2xl font-semibold text-[color:var(--tone-dark)]">/api/supported</h3>
+                  <h3 className="text-2xl font-semibold text-[color:var(--tone-dark)]">/api/facilitator/supported</h3>
                   <p className="text-[color:var(--tone-dark)]/80 mt-2">
                     Returns supported payment configurations.
                   </p>
                 </div>
                 <CodeBlock
-                  code={`GET /api/supported
+                  code={`GET /api/facilitator/supported
 
 [
   {
@@ -155,9 +155,9 @@ npm start`} language="bash" />
                   <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-dark)]/50 mb-2">
                     POST
                   </p>
-                  <h3 className="text-2xl font-semibold text-[color:var(--tone-dark)]">/api/verify</h3>
+                  <h3 className="text-2xl font-semibold text-[color:var(--tone-dark)]">/api/facilitator/verify</h3>
                 </div>
-                <CodeBlock code={`POST /api/verify
+                <CodeBlock code={`POST /api/facilitator/verify
 Content-Type: application/json
 
 {
@@ -187,9 +187,9 @@ Content-Type: application/json
                   <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-dark)]/50 mb-2">
                     POST
                   </p>
-                  <h3 className="text-2xl font-semibold text-[color:var(--tone-dark)]">/api/settle</h3>
+                  <h3 className="text-2xl font-semibold text-[color:var(--tone-dark)]">/api/facilitator/settle</h3>
                 </div>
-                <CodeBlock code={`POST /api/settle
+                <CodeBlock code={`POST /api/facilitator/settle
 Content-Type: application/json
 
 {
@@ -240,12 +240,12 @@ Content-Type: application/json
 
               <div className="space-y-6">
                 <CodeBlock code={`async function getSupportedPayments() {
-  const res = await fetch('https://your-facilitator.com/api/supported');
+  const res = await fetch('https://your-facilitator.com/api/facilitator/supported');
   return res.json();
 }
 
 async function verifyPayment(payload, details) {
-  const res = await fetch('https://your-facilitator.com/api/verify', {
+  const res = await fetch('https://your-facilitator.com/api/facilitator/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ payload, details }),
@@ -255,7 +255,7 @@ async function verifyPayment(payload, details) {
 }
 
 async function settlePayment(payload, details) {
-  const res = await fetch('https://your-facilitator.com/api/settle', {
+  const res = await fetch('https://your-facilitator.com/api/facilitator/settle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ payload, details }),

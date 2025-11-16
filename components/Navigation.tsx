@@ -11,11 +11,11 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center space-x-3">
+            <span className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-muted)]">
+              polkadot
+            </span>
             <span className="text-2xl font-semibold tracking-tight text-[color:var(--tone-light)]">
               x402
-            </span>
-            <span className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-muted)]">
-              Facilitator
             </span>
           </Link>
           

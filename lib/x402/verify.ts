@@ -4,8 +4,12 @@
  */
 
 import type { PaymentRequirements, VerificationResult } from '@/types/x402';
-import { ethers } from 'ethers';
 import { getNetworkConfig } from '@/lib/evm/networks';
+import { verify } from 'x402/facilitator';
+import { createSigner } from 'x402/types';
+import { createPublicClient, http } from 'viem';
+import { getProvider } from '@/lib/evm/wallet';
+import { env } from '@/lib/env';
 
 /**
  * Verify an x402 payment payload
@@ -15,9 +19,6 @@ import { getNetworkConfig } from '@/lib/evm/networks';
  * - Payment meets specified requirements
  * - Nonce/timestamp for replay protection
  * - Payment format and structure
- * 
- * Note: This is a simplified implementation. In production, you should use
- * the official x402 SDK package when available.
  */
 export async function verifyX402Payment(
   payload: string,
@@ -75,18 +76,7 @@ export async function verifyX402Payment(
 
     // For "exact" scheme, verify the payload structure
     if (requirements.scheme === 'exact') {
-      // In a real implementation, you would:
-      // 1. Decode the payload using x402 SDK
-      // 2. Verify EIP-712 signature
-      // 3. Check nonce/timestamp for replay protection
-      // 4. Validate payment amount meets requirements
-      // 5. Verify token address matches requirements
-      
-      // For now, we'll do basic validation
-      // The actual verification would require the x402 SDK or manual EIP-712 verification
-      
-      // Placeholder: Extract basic info (in production, use x402 SDK)
-      // This is a simplified check - real implementation needs proper payload parsing
+      // Basic payload format validation
       const payloadLength = payload.length;
       if (payloadLength < 66) {
         return {
@@ -95,23 +85,100 @@ export async function verifyX402Payment(
         };
       }
 
-      // TODO: Implement full verification using x402 SDK:
-      // - Parse payment payload
-      // - Verify EIP-712 signature
-      // - Check nonce/timestamp
-      // - Validate amount and token
-      
-      // For now, return a placeholder success
-      // In production, replace this with actual verification logic
-      return {
-        valid: true,
-        details: {
-          amount: '0', // Would be extracted from payload
-          token: '0x0000000000000000000000000000000000000000', // Would be extracted
-          from: '0x0000000000000000000000000000000000000000', // Would be extracted
-          to: '0x0000000000000000000000000000000000000000', // Would be extracted
-        },
-      };
+      // Parse and verify payment payload
+      // Note: Full EIP-712 signature verification requires x402 SDK integration
+      // This implementation provides basic validation - integrate x402 SDK for production
+      try {
+        // Basic hex validation
+        if (!/^0x[0-9a-fA-F]+$/.test(payload)) {
+          return {
+            valid: false,
+            error: 'Invalid payload format: must be valid hex string',
+          };
+        }
+
+        // Use x402 SDK to verify payment
+        try {
+          const networkConfig = getNetworkConfig(requirements.network);
+          
+          // Create public client for verification (read-only)
+          const publicClient = createPublicClient({
+            chain: {
+              id: networkConfig.chainId,
+              name: networkConfig.name,
+              nativeCurrency: networkConfig.nativeCurrency,
+              rpcUrls: {
+                default: { http: [networkConfig.rpcUrl] },
+              },
+            },
+            transport: http(networkConfig.rpcUrl),
+          });
+
+          // Create connected client for x402 SDK verification (read-only)
+          // For verification, we can use a public client - no private key needed
+          // Use createConnectedClient or pass the publicClient directly
+          // Since verify needs a Signer or ConnectedClient, we'll use the network string approach
+          // But for read-only verification, we can create a signer with a dummy key or use createConnectedClient
+          const signer = await createSigner(requirements.network, '0x0000000000000000000000000000000000000000000000000000000000000000');
+
+          // Build full payment requirements for x402 SDK
+          // Use values from requirements object, with defaults for missing fields
+          const fullRequirements = {
+            scheme: (requirements.scheme || 'exact') as 'exact',
+            network: requirements.network as any, // Network type may be restricted
+            maxAmountRequired: (requirements as any).maxAmountRequired || '0',
+            resource: (requirements as any).resource || '',
+            description: (requirements as any).description || '',
+            mimeType: (requirements as any).mimeType || 'application/json',
+            payTo: (requirements as any).payTo || '',
+            maxTimeoutSeconds: (requirements as any).maxTimeoutSeconds || 300,
+            asset: (requirements as any).asset || '',
+            extra: requirements.extra || {},
+          };
+
+          // Verify payment using x402 SDK
+          // This verifies the EIP-712 signature and checks the authorization is valid
+          const verificationResult = await verify(
+            signer,
+            payload as any, // PaymentPayload type
+            fullRequirements
+            // Config parameter removed - not needed for verification
+          );
+
+          // Convert x402 SDK response to our VerificationResult format
+          // The verify function returns { isValid: boolean, invalidReason?: string, payer?: string }
+          if (verificationResult.isValid) {
+            // Extract payment details from the payload (we need to parse it)
+            // For now, return basic structure - the middleware will extract amount from verification
+            return {
+              valid: true,
+              details: {
+                amount: (verificationResult as any).details?.amount || (requirements as any).maxAmountRequired || '0',
+                token: (verificationResult as any).details?.token || (requirements as any).asset || '',
+                from: verificationResult.payer || '',
+                to: (requirements as any).payTo || '',
+                nonce: (verificationResult as any).details?.nonce,
+                timestamp: (verificationResult as any).details?.timestamp,
+              },
+            };
+          } else {
+            return {
+              valid: false,
+              error: verificationResult.invalidReason || 'Payment verification failed',
+            };
+          }
+        } catch (error) {
+          return {
+            valid: false,
+            error: error instanceof Error ? error.message : 'Payment verification failed',
+          };
+        }
+      } catch (error) {
+        return {
+          valid: false,
+          error: error instanceof Error ? error.message : 'Payload verification failed',
+        };
+      }
     }
 
     return {
@@ -126,27 +193,4 @@ export async function verifyX402Payment(
   }
 }
 
-/**
- * Verify EIP-712 signature (helper for future implementation)
- * This would be used when the x402 SDK is available
- */
-async function verifyEIP712Signature(
-  domain: any,
-  types: any,
-  value: any,
-  signature: string,
-  signer: string
-): Promise<boolean> {
-  // This would use ethers.js to verify EIP-712 signatures
-  // Implementation depends on x402 payload structure
-  try {
-    const recoveredAddress = ethers.verifyMessage(
-      ethers.getBytes(signature),
-      signer
-    );
-    return recoveredAddress.toLowerCase() === signer.toLowerCase();
-  } catch {
-    return false;
-  }
-}
 

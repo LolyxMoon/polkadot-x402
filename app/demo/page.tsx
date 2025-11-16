@@ -1,70 +1,142 @@
 'use client';
 
 import { useState } from 'react';
+import axios from 'axios';
 import CodeBlock from '@/components/CodeBlock';
 
 interface DemoState {
   status: 'idle' | 'loading' | 'success' | 'error';
+  weatherData?: any;
   transactionHash?: string;
-  verificationTime?: number;
-  settlementTime?: number;
-  totalTime?: number;
-  apiProcessingTime?: number;
   responseHeaders?: Record<string, string>;
+  requestHeaders?: Record<string, string>;
   error?: string;
+  paymentDetails?: {
+    amount?: string;
+    network?: string;
+    payTo?: string;
+    token?: string;
+  };
+  step?: string;
 }
 
 export default function DemoPage() {
   const [demoState, setDemoState] = useState<DemoState>({ status: 'idle' });
 
   const runDemo = async () => {
-    setDemoState({ status: 'loading' });
+    setDemoState({ status: 'loading', step: 'Initializing...' });
 
     try {
-      // Generate a mock payload for demo purposes
-      const mockPayload = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      const paymentDetails = {
-        x402Version: 1,
-        scheme: 'exact',
-        network: 'polkadot-hub-testnet',
-        extra: {},
-      };
-
-      // Call the demo API endpoint that simulates the full x402 flow
-      const response = await fetch('/api/demo', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          payload: mockPayload,
-          details: paymentDetails,
-        }),
+      // Step 1: Make initial request to get 402 Payment Required response
+      setDemoState({ status: 'loading', step: 'Step 1: Making initial request (expecting 402)...' });
+      
+      const axiosClient = axios.create({
+        baseURL: typeof window !== 'undefined' ? window.location.origin : '',
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Demo request failed');
+      let response;
+      try {
+        response = await axiosClient.get('/api/protected/weather', {
+          params: { units: 'celsius' },
+          validateStatus: (status) => status === 402 || status === 200, // Accept 402 and 200
+        });
+      } catch (error: any) {
+        if (error.response?.status === 402) {
+          response = error.response;
+        } else {
+          throw error;
+        }
       }
 
-      // Extract response headers from the response
+      // Step 2: If we got 402, extract payment requirements
+      if (response.status !== 402) {
+        // Already paid or no payment required
+        const data = response.data;
+        setDemoState({
+          status: 'success',
+          weatherData: data.data,
+          transactionHash: response.headers['x-settlement-tx'],
+          responseHeaders: response.headers as any,
+          requestHeaders: {},
+          paymentDetails: {
+            amount: response.headers['x-payment-amount'] || '0',
+            network: 'polkadot-hub-testnet',
+          },
+        });
+        return;
+      }
+
+      setDemoState({ status: 'loading', step: 'Step 2: Received 402 Payment Required, extracting payment requirements...' });
+
+      const paymentRequirements = response.data;
+      
+      // Step 3: Create signer from buyer's private key (server-side API call)
+      setDemoState({ status: 'loading', step: 'Step 3: Creating payment authorization...' });
+      
+      // Call our API endpoint to create the payment header using buyer's private key
+      // This is done server-side to keep the private key secure
+      const paymentResponse = await axiosClient.post('/api/demo/create-payment', {
+        paymentRequirements,
+      });
+
+      const paymentHeader = paymentResponse.data.paymentHeader;
+
+      // Step 4: Retry request with payment header
+      setDemoState({ status: 'loading', step: 'Step 4: Retrying request with payment authorization...' });
+
+      const finalResponse = await axiosClient.get('/api/protected/weather', {
+        params: { units: 'celsius' },
+        headers: {
+          'X-402-Payment': paymentHeader,
+        },
+      });
+
+      // Step 5: Extract response data
+      setDemoState({ status: 'loading', step: 'Step 5: Payment verified and settled!' });
+
+      const data = finalResponse.data;
+
+      // Extract headers
       const responseHeaders: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
+      Object.keys(finalResponse.headers).forEach((key) => {
+        const value = finalResponse.headers[key];
         if (key.toLowerCase().startsWith('x-') || 
             ['cache-control', 'content-type', 'date', 'server'].includes(key.toLowerCase())) {
-          responseHeaders[key] = value;
+          responseHeaders[key] = String(value);
         }
       });
 
+      // Extract payment amount from response headers
+      const paymentAmount = finalResponse.headers['x-payment-amount'] || '0';
+
+      // Extract transaction hash
+      const transactionHash = finalResponse.headers['x-settlement-tx'];
+
+      // Extract payment response header if available
+      let paymentResponseData;
+      const paymentResponseHeader = finalResponse.headers['x-payment-response'];
+      if (paymentResponseHeader) {
+        try {
+          paymentResponseData = JSON.parse(paymentResponseHeader);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
       setDemoState({
         status: 'success',
-        transactionHash: data.transactionHash,
-        verificationTime: data.timing?.verification,
-        settlementTime: data.timing?.settlement,
-        totalTime: data.timing?.total,
-        apiProcessingTime: data.timing?.apiProcessing,
+        weatherData: data.data,
+        transactionHash: transactionHash || paymentResponseData?.transactionHash,
         responseHeaders,
+        requestHeaders: {
+          'X-402-Payment': paymentHeader.substring(0, 100) + '...', // Truncate for display
+        },
+        paymentDetails: {
+          amount: paymentAmount,
+          network: paymentRequirements.network || 'polkadot-hub-testnet',
+          payTo: paymentRequirements.payTo,
+          token: paymentRequirements.asset,
+        },
       });
     } catch (error) {
       setDemoState({
@@ -91,15 +163,20 @@ export default function DemoPage() {
           </p>
         </div>
 
-        {/* Demo Button */}
+        {/* Start Demo Button */}
         {demoState.status === 'idle' && (
           <div className="text-center mb-12">
-            <button
-              onClick={runDemo}
-              className="btn btn-primary text-lg px-8 py-4"
-            >
-              Start Demo →
-            </button>
+            <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-8 max-w-md mx-auto mb-6">
+              <p className="text-sm text-[color:var(--tone-dark)]/70 mb-4">
+                This demo uses the buyer's private key from environment variables to sign payment authorizations.
+              </p>
+              <button
+                onClick={runDemo}
+                className="btn btn-primary text-lg px-8 py-4"
+              >
+                Request Weather Data →
+              </button>
+            </div>
           </div>
         )}
 
@@ -107,7 +184,7 @@ export default function DemoPage() {
         {demoState.status === 'loading' && (
           <div className="text-center mb-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[color:var(--tone-dark)]"></div>
-            <p className="mt-4 text-[color:var(--tone-dark)]/70">Processing payment...</p>
+            <p className="mt-4 text-[color:var(--tone-dark)]/70">{demoState.step || 'Processing payment...'}</p>
           </div>
         )}
 
@@ -128,26 +205,34 @@ export default function DemoPage() {
                 </p>
               </div>
 
-              {/* Response Time */}
-              {demoState.status === 'success' && (
+              {/* Weather Data */}
+              {demoState.status === 'success' && demoState.weatherData && (
                 <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-6">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">Response Time</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">Weather Data</p>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">Total:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.totalTime}ms</span>
+                      <span className="text-[color:var(--tone-dark)]/70">City:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.weatherData.city}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">Verification:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.verificationTime}ms</span>
+                      <span className="text-[color:var(--tone-dark)]/70">Temperature:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">
+                        {demoState.weatherData.temperature} {demoState.weatherData.units}
+                      </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">Settlement:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.settlementTime}ms</span>
+                      <span className="text-[color:var(--tone-dark)]/70">Condition:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.weatherData.condition}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">API Processing:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.apiProcessingTime}ms</span>
+                      <span className="text-[color:var(--tone-dark)]/70">Humidity:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.weatherData.humidity}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[color:var(--tone-dark)]/70">Wind Speed:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">
+                        {demoState.weatherData.windSpeed} {demoState.weatherData.windSpeedUnits}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -219,12 +304,47 @@ export default function DemoPage() {
                 </div>
               )}
 
+              {/* Payment Details */}
+              {demoState.status === 'success' && demoState.paymentDetails && (
+                <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-6">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">Payment Details</p>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[color:var(--tone-dark)]/70">Amount:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">
+                        {demoState.paymentDetails.amount ? (Number(demoState.paymentDetails.amount) / 1e18).toFixed(6) : '0'} PAS
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[color:var(--tone-dark)]/70">Network:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.paymentDetails.network}</span>
+                    </div>
+                    {demoState.paymentDetails.payTo && (
+                      <div className="flex justify-between">
+                        <span className="text-[color:var(--tone-dark)]/70">Pay To:</span>
+                        <span className="text-[color:var(--tone-dark)] font-semibold font-mono text-xs">
+                          {demoState.paymentDetails.payTo.substring(0, 10)}...{demoState.paymentDetails.payTo.substring(38)}
+                        </span>
+                      </div>
+                    )}
+                    {demoState.paymentDetails.token && (
+                      <div className="flex justify-between">
+                        <span className="text-[color:var(--tone-dark)]/70">Token:</span>
+                        <span className="text-[color:var(--tone-dark)] font-semibold">
+                          {demoState.paymentDetails.token === 'native' ? 'Native (PAS)' : demoState.paymentDetails.token}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Request Headers */}
-              {demoState.status === 'success' && (
+              {demoState.status === 'success' && demoState.requestHeaders && (
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-3">Request Headers</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-3">Payment Authorization</p>
                   <CodeBlock
-                    code={JSON.stringify({ 'X-PAYMENT': 'Automatically handled by x402Axios' }, null, 2)}
+                    code={JSON.stringify(demoState.requestHeaders, null, 2)}
                     language="json"
                   />
                 </div>
@@ -233,7 +353,7 @@ export default function DemoPage() {
               {/* How it works */}
               {demoState.status === 'success' && (
                 <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-6">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">How x402Axios works</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">x402 Payment Flow</p>
                   <ol className="space-y-3 text-sm text-[color:var(--tone-dark)]/80">
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">1.</span>
@@ -241,19 +361,23 @@ export default function DemoPage() {
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">2.</span>
-                      <span>Receives 402 Payment Required with x402 payment details</span>
+                      <span>Receives 402 Payment Required with payment requirements</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">3.</span>
-                      <span>Signs payment authorization using wallet</span>
+                      <span>Buyer signs EIP-712 authorization (approval) using private key</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">4.</span>
-                      <span>Retries request with X-PAYMENT header</span>
+                      <span>Retries request with X-402-Payment header containing authorization</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">5.</span>
-                      <span>Server verifies and settles payment automatically</span>
+                      <span>Facilitator verifies authorization and calls transferWithAuthorization on token contract</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="font-semibold text-[color:var(--tone-dark)]">6.</span>
+                      <span>Server returns protected resource with settlement transaction hash</span>
                     </li>
                   </ol>
                 </div>
@@ -273,4 +397,3 @@ export default function DemoPage() {
     </main>
   );
 }
-

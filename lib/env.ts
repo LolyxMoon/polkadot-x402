@@ -1,58 +1,81 @@
 /**
  * Environment variable validation and configuration
- * Validates required environment variables and provides type-safe access
+ * Required keys: FACILITATOR_PRIVATE_KEY, BUYER_PRIVATE_KEY, SELLER_PRIVATE_KEY
+ * All other values are hardcoded for Polkadot Hub TestNet
  */
 
-function requireEnv(key: string): string {
-  const value = process.env[key];
+import { ethers } from 'ethers';
+
+function requireEnv(key: string, allowNextPublic: boolean = false): string {
+  // First try the regular key (server-side)
+  let value = process.env[key];
+  
+  // If not found and allowNextPublic is true, try NEXT_PUBLIC_ prefix (client-side)
+  if (!value && allowNextPublic) {
+    value = process.env[`NEXT_PUBLIC_${key}`];
+  }
+  
   if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
+    throw new Error(`Missing required environment variable: ${key}${allowNextPublic ? ` or NEXT_PUBLIC_${key}` : ''}`);
   }
   return value;
 }
 
-function getEnv(key: string, defaultValue: string): string {
-  return process.env[key] || defaultValue;
+function validatePrivateKey(key: string, name: string): void {
+  if (!key.startsWith('0x')) {
+    throw new Error(`${name} must start with 0x`);
+  }
+  if (key.length !== 66) {
+    throw new Error(`${name} must be 66 characters (0x + 64 hex chars)`);
+  }
 }
 
-function getEnvNumber(key: string, defaultValue: number): number {
-  const value = process.env[key];
-  if (!value) return defaultValue;
-  const parsed = parseInt(value, 10);
-  if (isNaN(parsed)) {
-    throw new Error(`Invalid number for environment variable: ${key}`);
+// Compute public addresses from private keys
+function getAddressFromPrivateKey(privateKey: string): string {
+  try {
+    const wallet = new ethers.Wallet(privateKey);
+    return wallet.address;
+  } catch (error) {
+    throw new Error(`Invalid private key format`);
   }
-  return parsed;
 }
 
 export const env = {
-  // Required
-  EVM_PRIVATE_KEY: requireEnv('EVM_PRIVATE_KEY'),
+  // Required - Facilitator wallet (signs settlement transactions)
+  // SERVER-ONLY: Never use NEXT_PUBLIC_ prefix for private keys
+  FACILITATOR_PRIVATE_KEY: requireEnv('FACILITATOR_PRIVATE_KEY'),
   
-  // Optional with defaults
-  RPC_URL: getEnv('RPC_URL', 'https://testnet-passet-hub-eth-rpc.polkadot.io'),
-  NETWORK: getEnv('NETWORK', 'polkadot-hub-testnet'),
-  LOG_LEVEL: getEnv('LOG_LEVEL', 'info'),
+  // Required - Buyer wallet (makes payments)
+  // SERVER-ONLY: Never use NEXT_PUBLIC_ prefix for private keys
+  BUYER_PRIVATE_KEY: requireEnv('BUYER_PRIVATE_KEY'),
   
-  // Custom chain configuration (optional, for custom EVM chains)
-  CHAIN_ID: getEnvNumber('CHAIN_ID', 0), // 0 means use default for network
-  CHAIN_NAME: getEnv('CHAIN_NAME', ''),
-  CHAIN_RPC_URL: getEnv('CHAIN_RPC_URL', ''),
-  NATIVE_CURRENCY_NAME: getEnv('NATIVE_CURRENCY_NAME', 'ETH'),
-  NATIVE_CURRENCY_SYMBOL: getEnv('NATIVE_CURRENCY_SYMBOL', 'ETH'),
-  NATIVE_CURRENCY_DECIMALS: getEnvNumber('NATIVE_CURRENCY_DECIMALS', 18),
+  // Required - Seller wallet (receives payments)
+  // SERVER-ONLY: Never use NEXT_PUBLIC_ prefix for private keys
+  SELLER_PRIVATE_KEY: requireEnv('SELLER_PRIVATE_KEY'),
   
-  // Gas configuration
-  GAS_LIMIT: getEnv('GAS_LIMIT', ''),
-  GAS_PRICE_MULTIPLIER: parseFloat(getEnv('GAS_PRICE_MULTIPLIER', '1.0')),
+  // Required - Facilitator URL (for settlement endpoint)
+  // Can be accessed from client-side if NEXT_PUBLIC_FACILITATOR_URL is set
+  // Server-side falls back to FACILITATOR_URL if NEXT_PUBLIC_ version not available
+  FACILITATOR_URL: requireEnv('FACILITATOR_URL', true),
+  
+  // Required - Token address (use 'native' for native token/PAS, or ERC20 token address)
+  // Can be accessed from client-side if NEXT_PUBLIC_TOKEN_ADDRESS is set
+  // Server-side falls back to TOKEN_ADDRESS if NEXT_PUBLIC_ version not available
+  TOKEN_ADDRESS: requireEnv('TOKEN_ADDRESS', true),
+  
+  // Hardcoded for Polkadot Hub TestNet
+  NETWORK: 'polkadot-hub-testnet' as const,
 };
 
-// Validate private key format
-if (!env.EVM_PRIVATE_KEY.startsWith('0x')) {
-  throw new Error('EVM_PRIVATE_KEY must start with 0x');
-}
+// Validate all private keys
+validatePrivateKey(env.FACILITATOR_PRIVATE_KEY, 'FACILITATOR_PRIVATE_KEY');
+validatePrivateKey(env.BUYER_PRIVATE_KEY, 'BUYER_PRIVATE_KEY');
+validatePrivateKey(env.SELLER_PRIVATE_KEY, 'SELLER_PRIVATE_KEY');
 
-if (env.EVM_PRIVATE_KEY.length !== 66) {
-  throw new Error('EVM_PRIVATE_KEY must be 66 characters (0x + 64 hex chars)');
-}
+// Compute and export public addresses
+export const addresses = {
+  facilitator: getAddressFromPrivateKey(env.FACILITATOR_PRIVATE_KEY),
+  buyer: getAddressFromPrivateKey(env.BUYER_PRIVATE_KEY),
+  seller: getAddressFromPrivateKey(env.SELLER_PRIVATE_KEY),
+};
 

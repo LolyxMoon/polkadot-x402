@@ -1,9 +1,7 @@
 /**
  * EVM Network configurations
- * Supports both standard networks and custom chain configurations
+ * Polkadot Hub TestNet facilitator only
  */
-
-import { env } from '@/lib/env';
 
 export interface NetworkConfig {
   name: string;
@@ -17,8 +15,7 @@ export interface NetworkConfig {
 }
 
 /**
- * Standard network configurations
- * Polkadot Hub TestNet facilitator
+ * Polkadot Hub TestNet configuration
  */
 export const STANDARD_NETWORKS: Record<string, NetworkConfig> = {
   'polkadot-hub-testnet': {
@@ -34,51 +31,21 @@ export const STANDARD_NETWORKS: Record<string, NetworkConfig> = {
 };
 
 /**
- * Get network configuration for a given network identifier
- * Supports custom chains via environment variables
+ * Get network configuration for Polkadot Hub TestNet
  */
 export function getNetworkConfig(network: string): NetworkConfig {
-  // Check if it's a standard network
-  if (STANDARD_NETWORKS[network]) {
+  // Only support Polkadot Hub TestNet
+  if (network === 'polkadot-hub-testnet' && STANDARD_NETWORKS[network]) {
     return STANDARD_NETWORKS[network];
   }
 
-  // Check if custom chain configuration is provided
-  if (env.CHAIN_ID > 0 && env.CHAIN_RPC_URL) {
-    // Use custom chain configuration
-    return {
-      name: env.CHAIN_NAME || `Custom Chain (${network})`,
-      chainId: env.CHAIN_ID,
-      rpcUrl: env.CHAIN_RPC_URL,
-      nativeCurrency: {
-        name: env.NATIVE_CURRENCY_NAME,
-        symbol: env.NATIVE_CURRENCY_SYMBOL,
-        decimals: env.NATIVE_CURRENCY_DECIMALS,
-      },
-    };
+  // Default fallback to Polkadot Hub TestNet
+  if (STANDARD_NETWORKS['polkadot-hub-testnet']) {
+    return STANDARD_NETWORKS['polkadot-hub-testnet'];
   }
 
-  // Fallback: try to use RPC_URL from env if available
-  if (env.RPC_URL && env.RPC_URL !== 'https://testnet-passet-hub-eth-rpc.polkadot.io') {
-    // Attempt to infer chain ID from network name or use a default
-    // For custom chains, chain ID should be provided via env
-    const chainId = env.CHAIN_ID || 420420422; // Default to Polkadot Hub TestNet if not specified
-    
-    return {
-      name: env.CHAIN_NAME || `Custom Chain (${network})`,
-      chainId,
-      rpcUrl: env.RPC_URL,
-      nativeCurrency: {
-        name: env.NATIVE_CURRENCY_NAME,
-        symbol: env.NATIVE_CURRENCY_SYMBOL,
-        decimals: env.NATIVE_CURRENCY_DECIMALS,
-      },
-    };
-  }
-
-  // Default fallback
   throw new Error(
-    `Network "${network}" is not supported. Please configure CHAIN_ID, CHAIN_RPC_URL, and other chain details in environment variables for custom chains.`
+    `Network "${network}" is not supported. Only Polkadot Hub TestNet is supported.`
   );
 }
 

@@ -1,6 +1,6 @@
 /**
- * GET /api/verify - Returns information about the verify endpoint
- * POST /api/verify - Verifies an x402 payment payload
+ * GET /api/facilitator/verify - Returns information about the verify endpoint
+ * POST /api/facilitator/verify - Verifies an x402 payment payload
  * 
  * Request body:
  * {
@@ -8,7 +8,7 @@
  *   "details": {
  *     "x402Version": 1,
  *     "scheme": "exact",
- *     "network": "base-sepolia",
+ *     "network": "polkadot-hub-testnet",
  *     "extra": {}
  *   }
  * }
@@ -32,7 +32,7 @@ import { verifyX402Payment } from '@/lib/x402/verify';
 export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
-      endpoint: '/api/verify',
+      endpoint: '/api/facilitator/verify',
       description: 'Verifies x402 payment payloads',
       methods: ['GET', 'POST'],
       requestFormat: {
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
         details: {
           x402Version: 'number (must be 1)',
           scheme: 'string (e.g., "exact")',
-          network: 'string (e.g., "base-sepolia")',
+          network: 'string (e.g., "polkadot-hub-testnet")',
           extra: 'object (optional, network-specific configuration)',
         },
       },
