@@ -160,8 +160,8 @@ async function create402Response(
   // Use configured facilitator URL
   const facilitatorUrl = env.FACILITATOR_URL;
   
-  // Use configured token address, or override from config
-  const tokenAddress = config.token || env.TOKEN_ADDRESS;
+  // Use token from config, default to 'native' for native tokens
+  const tokenAddress = config.token || 'native';
 
   const response = {
     maxAmountRequired: config.amount,
@@ -227,7 +227,7 @@ export async function middleware(request: NextRequest) {
     resource: (details as any).resource || pathname,
     description: (details as any).description || paymentConfig.description || 'Access to this resource requires payment',
     payTo: (details as any).payTo || sellerAddress,
-    asset: (details as any).asset || paymentConfig.token || env.TOKEN_ADDRESS,
+    asset: (details as any).asset || paymentConfig.token || 'native',
     mimeType: (details as any).mimeType || 'application/json',
     maxTimeoutSeconds: (details as any).maxTimeoutSeconds || 300,
     // Ensure required fields are set
@@ -320,7 +320,7 @@ export async function middleware(request: NextRequest) {
     const sellerAddress = await getSellerAddress(network);
     // For native tokens, use "native" string (not an address)
     // The client will convert this to zero address when creating payment
-    const tokenAddress = paymentConfig.token || env.TOKEN_ADDRESS;
+    const tokenAddress = paymentConfig.token || 'native';
     
     // Sanitize error message to avoid invalid header values
     const errorMessage = verification.error || 'Invalid payment';
@@ -360,7 +360,7 @@ export async function middleware(request: NextRequest) {
     if (paidAmount < requiredAmount) {
       const network = env.NETWORK;
       const sellerAddress = await getSellerAddress(network);
-      const tokenAddress = paymentConfig.token || env.TOKEN_ADDRESS;
+      const tokenAddress = paymentConfig.token || 'native';
       
       return NextResponse.json(
         {
@@ -390,7 +390,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Check token if specified
-    const expectedToken = paymentConfig.token || env.TOKEN_ADDRESS;
+    const expectedToken = paymentConfig.token || 'native';
     if (verification.details.token) {
       if (verification.details.token.toLowerCase() !== expectedToken.toLowerCase()) {
         const network = env.NETWORK;
@@ -481,7 +481,7 @@ export async function middleware(request: NextRequest) {
     // Settlement failed - return error
     const network = env.NETWORK;
     const sellerAddress = await getSellerAddress(network);
-    const tokenAddress = paymentConfig.token || env.TOKEN_ADDRESS;
+    const tokenAddress = paymentConfig.token || 'native';
     
     return NextResponse.json(
       {

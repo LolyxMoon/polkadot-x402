@@ -77,11 +77,6 @@ export const env = {
   // Server-side falls back to FACILITATOR_URL if NEXT_PUBLIC_ version not available
   FACILITATOR_URL: requireEnv('FACILITATOR_URL', true),
   
-  // Required - Token address (use 'native' for native token/PAS, or ERC20 token address)
-  // Can be accessed from client-side if NEXT_PUBLIC_TOKEN_ADDRESS is set
-  // Server-side falls back to TOKEN_ADDRESS if NEXT_PUBLIC_ version not available
-  TOKEN_ADDRESS: requireEnv('TOKEN_ADDRESS', true),
-  
   // Hardcoded for Polkadot Hub TestNet
   NETWORK: 'polkadot-hub-testnet' as const,
 };

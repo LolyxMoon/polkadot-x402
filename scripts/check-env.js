@@ -131,24 +131,6 @@ const REQUIRED_VARS = {
       return null;
     },
   },
-  TOKEN_ADDRESS: {
-    required: true,
-    validate: (value) => {
-      if (!value) {
-        return 'Cannot be empty';
-      }
-      if (value === 'native') {
-        return null; // Valid
-      }
-      if (!value.startsWith('0x')) {
-        return 'Must start with 0x or be "native"';
-      }
-      if (value.length !== 42) {
-        return `Must be 42 characters for contract address (got ${value.length})`;
-      }
-      return null;
-    },
-  },
 };
 
 // Optional client-side variables (should have NEXT_PUBLIC_ prefix)
@@ -157,14 +139,6 @@ const OPTIONAL_CLIENT_VARS = {
     validate: (value) => {
       if (value && !value.startsWith('http://') && !value.startsWith('https://')) {
         return 'Must be a valid URL starting with http:// or https://';
-      }
-      return null;
-    },
-  },
-  NEXT_PUBLIC_TOKEN_ADDRESS: {
-    validate: (value) => {
-      if (value && value !== 'native' && !value.startsWith('0x')) {
-        return 'Must start with 0x or be "native"';
       }
       return null;
     },
