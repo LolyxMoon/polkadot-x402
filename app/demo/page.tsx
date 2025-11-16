@@ -215,7 +215,7 @@ export default function DemoPage() {
 
   return (
     <main className="min-h-screen bg-[color:var(--tone-light)] pt-16">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+      <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-8">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-[color:var(--tone-dark)] mb-2">
