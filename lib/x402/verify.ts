@@ -101,6 +101,12 @@ export async function verifyX402Payment(
         try {
           const networkConfig = getNetworkConfig(requirements.network);
           
+          // Map network for x402 SDK compatibility
+          // For EVM-compatible networks like polkadot-hub-testnet, use base-sepolia as proxy
+          const x402NetworkName = requirements.network === 'polkadot-hub-testnet' 
+            ? 'base-sepolia' 
+            : requirements.network;
+          
           // Create public client for verification (read-only)
           const publicClient = createPublicClient({
             chain: {
@@ -119,13 +125,13 @@ export async function verifyX402Payment(
           // Use createConnectedClient or pass the publicClient directly
           // Since verify needs a Signer or ConnectedClient, we'll use the network string approach
           // But for read-only verification, we can create a signer with a dummy key or use createConnectedClient
-          const signer = await createSigner(requirements.network, '0x0000000000000000000000000000000000000000000000000000000000000000');
+          const signer = await createSigner(x402NetworkName as any, '0x0000000000000000000000000000000000000000000000000000000000000000');
 
           // Build full payment requirements for x402 SDK
-          // Use values from requirements object, with defaults for missing fields
+          // Use the mapped network name for x402 SDK, but keep original in extra
           const fullRequirements = {
             scheme: (requirements.scheme || 'exact') as 'exact',
-            network: requirements.network as any, // Network type may be restricted
+            network: x402NetworkName as any, // Use mapped network name for SDK
             maxAmountRequired: (requirements as any).maxAmountRequired || '0',
             resource: (requirements as any).resource || '',
             description: (requirements as any).description || '',
@@ -133,8 +139,26 @@ export async function verifyX402Payment(
             payTo: (requirements as any).payTo || '',
             maxTimeoutSeconds: (requirements as any).maxTimeoutSeconds || 300,
             asset: (requirements as any).asset || '',
-            extra: requirements.extra || {},
+            extra: {
+              ...requirements.extra,
+              actualNetwork: requirements.network, // Preserve original network
+            },
           };
+
+          // Debug logging
+          console.log('verifyX402Payment: Calling x402 SDK verify', {
+            network: x402NetworkName,
+            originalNetwork: requirements.network,
+            payloadLength: payload.length,
+            payloadPrefix: payload.substring(0, 50),
+            requirements: {
+              scheme: fullRequirements.scheme,
+              network: fullRequirements.network,
+              payTo: fullRequirements.payTo,
+              resource: fullRequirements.resource,
+              amount: fullRequirements.maxAmountRequired,
+            },
+          });
 
           // Verify payment using x402 SDK
           // This verifies the EIP-712 signature and checks the authorization is valid
@@ -144,6 +168,12 @@ export async function verifyX402Payment(
             fullRequirements
             // Config parameter removed - not needed for verification
           );
+
+          console.log('verifyX402Payment: x402 SDK verify result', {
+            isValid: verificationResult.isValid,
+            invalidReason: (verificationResult as any).invalidReason,
+            payer: verificationResult.payer,
+          });
 
           // Convert x402 SDK response to our VerificationResult format
           // The verify function returns { isValid: boolean, invalidReason?: string, payer?: string }

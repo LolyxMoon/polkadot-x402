@@ -1,6 +1,7 @@
 /**
  * Environment variable validation and configuration
- * Required keys: FACILITATOR_PRIVATE_KEY, BUYER_PRIVATE_KEY, SELLER_PRIVATE_KEY
+ * Required keys: FACILITATOR_PRIVATE_KEY, BUYER_PRIVATE_KEY, SELLER_ADDRESS
+ * SELLER_PRIVATE_KEY is optional - only needed if you need to sign with seller wallet
  * All other values are hardcoded for Polkadot Hub TestNet
  */
 
@@ -19,6 +20,19 @@ function requireEnv(key: string, allowNextPublic: boolean = false): string {
     throw new Error(`Missing required environment variable: ${key}${allowNextPublic ? ` or NEXT_PUBLIC_${key}` : ''}`);
   }
   return value;
+}
+
+function getEnv(key: string, allowNextPublic: boolean = false, defaultValue?: string): string | undefined {
+  // First try the regular key (server-side)
+  let value = process.env[key];
+  
+  // If not found and allowNextPublic is true, try NEXT_PUBLIC_ prefix (client-side)
+  if (!value && allowNextPublic) {
+    value = process.env[`NEXT_PUBLIC_${key}`];
+  }
+  
+  // Return value if it exists and is not empty, otherwise return defaultValue or undefined
+  return (value && value.trim()) || defaultValue;
 }
 
 function validatePrivateKey(key: string, name: string): void {
@@ -49,9 +63,14 @@ export const env = {
   // SERVER-ONLY: Never use NEXT_PUBLIC_ prefix for private keys
   BUYER_PRIVATE_KEY: requireEnv('BUYER_PRIVATE_KEY'),
   
-  // Required - Seller wallet (receives payments)
+  // Optional - Seller wallet private key (only needed if seller needs to sign transactions)
   // SERVER-ONLY: Never use NEXT_PUBLIC_ prefix for private keys
-  SELLER_PRIVATE_KEY: requireEnv('SELLER_PRIVATE_KEY'),
+  SELLER_PRIVATE_KEY: getEnv('SELLER_PRIVATE_KEY'),
+  
+  // Required - Seller wallet address (receives payments)
+  // Can be provided directly via SELLER_ADDRESS or NEXT_PUBLIC_SELLER_ADDRESS
+  // Or derived from SELLER_PRIVATE_KEY if available
+  SELLER_ADDRESS: getEnv('SELLER_ADDRESS', true) || getEnv('NEXT_PUBLIC_SELLER_ADDRESS') || undefined,
   
   // Required - Facilitator URL (for settlement endpoint)
   // Can be accessed from client-side if NEXT_PUBLIC_FACILITATOR_URL is set
@@ -67,15 +86,24 @@ export const env = {
   NETWORK: 'polkadot-hub-testnet' as const,
 };
 
-// Validate all private keys
+// Validate required private keys
 validatePrivateKey(env.FACILITATOR_PRIVATE_KEY, 'FACILITATOR_PRIVATE_KEY');
 validatePrivateKey(env.BUYER_PRIVATE_KEY, 'BUYER_PRIVATE_KEY');
-validatePrivateKey(env.SELLER_PRIVATE_KEY, 'SELLER_PRIVATE_KEY');
+
+// Validate seller private key if provided
+if (env.SELLER_PRIVATE_KEY) {
+  validatePrivateKey(env.SELLER_PRIVATE_KEY, 'SELLER_PRIVATE_KEY');
+}
 
 // Compute and export public addresses
 export const addresses = {
   facilitator: getAddressFromPrivateKey(env.FACILITATOR_PRIVATE_KEY),
   buyer: getAddressFromPrivateKey(env.BUYER_PRIVATE_KEY),
-  seller: getAddressFromPrivateKey(env.SELLER_PRIVATE_KEY),
+  seller: env.SELLER_ADDRESS || (env.SELLER_PRIVATE_KEY ? getAddressFromPrivateKey(env.SELLER_PRIVATE_KEY) : ''),
 };
+
+// Validate seller address is available
+if (!addresses.seller) {
+  throw new Error('SELLER_ADDRESS or SELLER_PRIVATE_KEY must be provided');
+}
 

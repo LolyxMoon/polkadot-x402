@@ -1,16 +1,15 @@
 /**
- * API endpoint to create x402 payment authorization
+ * API endpoint to create x402 payment authorization using polkadot-x402 SDK
  * Uses buyer's private key from environment variables to sign the payment
  * This keeps the private key secure on the server side
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createSignerFromPrivateKey, createPaymentHeader } from '../../../../sdk/src';
 import { createSigner } from 'x402/types';
-import { createPaymentHeader, preparePaymentHeader, signPaymentHeader } from 'x402/client';
-import { createWalletClient, http } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { preparePaymentHeader, signPaymentHeader } from 'x402/client';
 import { env } from '@/lib/env';
-import { getNetworkConfig } from '@/lib/evm/networks';
+import { privateKeyToAccount } from 'viem/accounts';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,34 +26,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get network configuration
-    const networkConfig = getNetworkConfig(paymentRequirements.network);
+    // Use the network ID from payment requirements
+    const networkId = paymentRequirements.network;
 
-    // For custom networks not supported by x402 SDK, we need to use viem directly
-    // Create wallet client from buyer's private key
-    const account = privateKeyToAccount(env.BUYER_PRIVATE_KEY as `0x${string}`);
-    const walletClient = createWalletClient({
-      account,
-      chain: {
-        id: networkConfig.chainId,
-        name: networkConfig.name,
-        nativeCurrency: networkConfig.nativeCurrency,
-        rpcUrls: {
-          default: { http: [networkConfig.rpcUrl] },
-        },
-      },
-      transport: http(networkConfig.rpcUrl),
-    });
+    // Extract payment details
+    const payTo = paymentRequirements.payTo;
+    const amount = paymentRequirements.maxAmountRequired || '0';
 
-    // Try to use x402 SDK, but fallback to manual implementation for unsupported networks
-    let paymentHeader: string;
-    const x402Version = paymentRequirements.x402Version || 1;
+    if (!payTo) {
+      return NextResponse.json(
+        { error: 'Missing payTo address in payment requirements' },
+        { status: 400 }
+      );
+    }
+
+    // For EVM-compatible networks, use the old x402 SDK (EVM-compatible)
+    // For native Polkadot networks, use the new polkadot-x402 SDK
+    const isEVMCompatible = networkId === 'polkadot-hub-testnet';
     
-    try {
-      // Try using x402 SDK with a supported network name (will fail for custom networks)
-      // For now, we'll use a workaround: use a supported network name but with our custom RPC
-      // Actually, let's create the signer manually using viem and use preparePaymentHeader + signPaymentHeader
-      const buyerAddress = account.address;
+    let paymentHeader: string;
+    let buyerAddress: string;
+
+    if (isEVMCompatible) {
+      // Use old x402 SDK for EVM-compatible networks
+      // Note: x402 SDK requires a supported network name, so we use 'base-sepolia' 
+      // as a proxy since it's EVM-compatible. The actual network is polkadot-hub-testnet
+      const account = privateKeyToAccount(env.BUYER_PRIVATE_KEY as `0x${string}`);
+      buyerAddress = account.address;
+
+      const x402Version = paymentRequirements.x402Version || 1;
+      
+      // Map to a supported network for x402 SDK (it needs a recognized network name)
+      // We use 'base-sepolia' as a proxy since it's EVM-compatible
+      // The actual network details are in the payment requirements
+      const x402NetworkName = 'base-sepolia' as any;
       
       // Prepare unsigned payment header
       const unsignedPayment = preparePaymentHeader(
@@ -62,59 +67,75 @@ export async function POST(request: NextRequest) {
         x402Version,
         {
           scheme: paymentRequirements.scheme,
-          network: paymentRequirements.network as any, // May not be in supported list
-          maxAmountRequired: paymentRequirements.maxAmountRequired,
+          network: x402NetworkName, // Use supported network name for SDK
+          maxAmountRequired: amount,
           resource: paymentRequirements.resource || '',
           description: paymentRequirements.description || '',
           mimeType: paymentRequirements.mimeType || 'application/json',
-          payTo: paymentRequirements.payTo || '',
+          payTo: payTo,
           maxTimeoutSeconds: paymentRequirements.maxTimeoutSeconds || 300,
           asset: paymentRequirements.asset || 'native',
-          extra: paymentRequirements.extra || {},
+          extra: {
+            ...paymentRequirements.extra,
+            actualNetwork: networkId, // Store actual network in extra
+          },
         }
       );
 
-      // Create a signer-like object from wallet client
-      // We need to create a MultiNetworkSigner or use the wallet client directly
-      // For now, let's try creating signer with a dummy network and then override
-      const signer = await createSigner('base-sepolia', env.BUYER_PRIVATE_KEY);
+      // Create signer using old x402 SDK with supported network name
+      const signer = await createSigner(x402NetworkName, env.BUYER_PRIVATE_KEY);
       
-      // Sign the payment header
+      // Sign the payment header (use the same network name for signing)
       paymentHeader = await signPaymentHeader(
         signer,
         {
           scheme: paymentRequirements.scheme,
-          network: paymentRequirements.network as any,
-          maxAmountRequired: paymentRequirements.maxAmountRequired,
+          network: x402NetworkName, // Use supported network name
+          maxAmountRequired: amount,
           resource: paymentRequirements.resource || '',
           description: paymentRequirements.description || '',
           mimeType: paymentRequirements.mimeType || 'application/json',
-          payTo: paymentRequirements.payTo || '',
+          payTo: payTo,
           maxTimeoutSeconds: paymentRequirements.maxTimeoutSeconds || 300,
           asset: paymentRequirements.asset || 'native',
-          extra: paymentRequirements.extra || {},
+          extra: {
+            ...paymentRequirements.extra,
+            actualNetwork: networkId, // Store actual network in extra
+          },
         },
         unsignedPayment
       );
-    } catch (sdkError: any) {
-      // If SDK fails due to unsupported network, we need to implement manual signing
-      // For now, throw a more helpful error
-      throw new Error(
-        `Failed to create payment header: ${sdkError.message}. ` +
-        `Note: x402 SDK may not support custom networks. Network: ${paymentRequirements.network}`
-      );
+    } else {
+      // Use new polkadot-x402 SDK for native Polkadot networks
+      const signer = createSignerFromPrivateKey(env.BUYER_PRIVATE_KEY, networkId);
+      buyerAddress = signer.address;
+
+      const paymentResult = await createPaymentHeader(signer, {
+        from: signer.address,
+        to: payTo,
+        amount,
+        requirements: {
+          ...paymentRequirements,
+          network: networkId,
+        },
+      });
+
+      paymentHeader = paymentResult.paymentHeader;
     }
 
     return NextResponse.json({
       paymentHeader,
       network: paymentRequirements.network,
+      address: buyerAddress,
     });
   } catch (error) {
     console.error('Error creating payment header:', error);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
       { 
         error: 'Failed to create payment authorization',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
       },
       { status: 500 }
     );

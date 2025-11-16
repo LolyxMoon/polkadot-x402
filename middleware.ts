@@ -50,7 +50,7 @@ function isProtectedRoute(pathname: string): boolean {
 
 /**
  * Extract payment from request headers
- * x402 protocol uses X-402-Payment header
+ * x402 protocol uses X-402-Payment header and optionally X-402-Payment-Details
  */
 function extractPayment(request: NextRequest): {
   payload: string | null;
@@ -58,9 +58,20 @@ function extractPayment(request: NextRequest): {
 } {
   // Check for X-402-Payment header (standard x402 header)
   const paymentHeader = request.headers.get('X-402-Payment');
+  const detailsHeader = request.headers.get('X-402-Payment-Details');
   
   if (!paymentHeader) {
     return { payload: null, details: null };
+  }
+
+  // Try to parse payment details from X-402-Payment-Details header first
+  let paymentDetails: PaymentRequirements | null = null;
+  if (detailsHeader) {
+    try {
+      paymentDetails = JSON.parse(detailsHeader) as PaymentRequirements;
+    } catch {
+      // Invalid JSON, will use defaults
+    }
   }
 
   try {
@@ -74,11 +85,11 @@ function extractPayment(request: NextRequest): {
       };
     }
     
-    // If it's just a string payload, try to infer details from defaults
+    // If it's just a string payload, use details from header or defaults
     if (typeof parsed === 'string') {
       return {
         payload: parsed,
-        details: {
+        details: paymentDetails || {
           x402Version: 1,
           scheme: 'exact',
           network: env.NETWORK,
@@ -90,7 +101,7 @@ function extractPayment(request: NextRequest): {
     if (paymentHeader.startsWith('0x')) {
       return {
         payload: paymentHeader,
-        details: {
+        details: paymentDetails || {
           x402Version: 1,
           scheme: 'exact',
           network: env.NETWORK,
@@ -176,19 +187,42 @@ export async function middleware(request: NextRequest) {
   }
 
   // Merge payment details with payment config to create full requirements
+  // Preserve values from payment details to ensure verification matches what was signed
+  const sellerAddress = await getSellerAddress(env.NETWORK);
   const fullPaymentRequirements: PaymentRequirements & Record<string, any> = {
     ...details,
-    maxAmountRequired: paymentConfig.amount,
-    resource: pathname,
-    description: paymentConfig.description || 'Access to this resource requires payment',
-    payTo: await getSellerAddress(env.NETWORK),
-    asset: paymentConfig.token || env.TOKEN_ADDRESS,
-    mimeType: 'application/json',
-    maxTimeoutSeconds: 300,
+    // Override only if not provided in details, to ensure verification matches signed payment
+    maxAmountRequired: details.maxAmountRequired || paymentConfig.amount,
+    resource: details.resource || pathname,
+    description: details.description || paymentConfig.description || 'Access to this resource requires payment',
+    payTo: details.payTo || sellerAddress,
+    asset: details.asset || paymentConfig.token || env.TOKEN_ADDRESS,
+    mimeType: details.mimeType || 'application/json',
+    maxTimeoutSeconds: details.maxTimeoutSeconds || 300,
+    // Ensure required fields are set
+    x402Version: details.x402Version || 1,
+    scheme: details.scheme || 'exact',
+    network: details.network || env.NETWORK,
   };
+
+  // Debug logging
+  console.log('Middleware: Verifying payment', {
+    payloadLength: payload.length,
+    payloadPrefix: payload.substring(0, 20),
+    network: fullPaymentRequirements.network,
+    scheme: fullPaymentRequirements.scheme,
+    payTo: fullPaymentRequirements.payTo,
+    amount: fullPaymentRequirements.maxAmountRequired,
+  });
 
   // Verify the payment using x402 verification
   const verification = await verifyX402Payment(payload, fullPaymentRequirements);
+  
+  console.log('Middleware: Verification result', {
+    valid: verification.valid,
+    error: verification.error,
+    details: verification.details,
+  });
 
   // If payment is invalid, return 402 with error details
   if (!verification.valid) {

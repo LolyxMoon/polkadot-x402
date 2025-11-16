@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import axios from 'axios';
+import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import CodeBlock from '@/components/CodeBlock';
+import type { PaymentRequirements } from '../../../sdk/src/types';
 
 interface DemoState {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -20,122 +21,168 @@ interface DemoState {
   step?: string;
 }
 
+/**
+ * Create an axios instance with x402 payment support
+ * Uses server-side endpoint for payment creation to keep private keys secure
+ */
+function createX402Axios(baseURL: string): AxiosInstance {
+  const instance = axios.create({ baseURL });
+
+  // Add response interceptor for automatic 402 handling
+  instance.interceptors.response.use(
+    (response) => response,
+    async (error: AxiosError) => {
+      // Only handle 402 Payment Required errors
+      if (error.response?.status !== 402) {
+        return Promise.reject(error);
+      }
+
+      const originalRequest = error.config as InternalAxiosRequestConfig & {
+        _retry?: boolean;
+        _x402PaymentHeader?: string;
+      };
+
+      // Prevent infinite retry loops
+      if (originalRequest._retry) {
+        return Promise.reject(error);
+      }
+
+      originalRequest._retry = true;
+
+      try {
+        // Extract payment requirements from 402 response
+        const paymentRequirements = error.response.data as PaymentRequirements;
+
+        if (!paymentRequirements || !paymentRequirements.network) {
+          return Promise.reject(
+            new Error('Invalid 402 response: missing payment requirements')
+          );
+        }
+
+        // Call server-side endpoint to create payment header
+        // This keeps the private key secure on the server
+        // Use regular axios (not the x402 instance) to avoid infinite loop
+        const paymentResponse = await axios.post(`${baseURL}/api/demo/create-payment`, {
+          paymentRequirements,
+        });
+
+        if (!paymentResponse.data?.paymentHeader) {
+          return Promise.reject(
+            new Error(
+              `Payment creation failed: ${paymentResponse.data?.error || 'No payment header returned'}`
+            )
+          );
+        }
+
+        const paymentHeader = paymentResponse.data.paymentHeader;
+
+        // Add payment header to request headers
+        if (!originalRequest.headers) {
+          originalRequest.headers = {};
+        }
+        originalRequest.headers['X-402-Payment'] = paymentHeader;
+        // Always send payment details header so middleware can extract the correct network and other details
+        originalRequest.headers['X-402-Payment-Details'] = JSON.stringify(
+          paymentRequirements
+        );
+
+        // Retry the original request with payment header
+        const retryResponse = await instance.request(originalRequest);
+
+        return retryResponse;
+      } catch (paymentError: any) {
+        // Better error handling
+        const errorMessage = paymentError?.response?.data?.error 
+          || paymentError?.response?.data?.details
+          || paymentError?.message
+          || 'Unknown error';
+        
+        return Promise.reject(
+          new Error(
+            `Failed to handle x402 payment: ${errorMessage}`
+          )
+        );
+      }
+    }
+  );
+
+  return instance;
+}
+
 export default function DemoPage() {
   const [demoState, setDemoState] = useState<DemoState>({ status: 'idle' });
 
   const runDemo = async () => {
-    setDemoState({ status: 'loading', step: 'Initializing...' });
+    setDemoState({ status: 'loading', step: 'Initializing x402 client...' });
 
     try {
-      // Step 1: Make initial request to get 402 Payment Required response
-      setDemoState({ status: 'loading', step: 'Step 1: Making initial request (expecting 402)...' });
+      const baseURL = typeof window !== 'undefined' ? window.location.origin : '';
       
-      const axiosClient = axios.create({
-        baseURL: typeof window !== 'undefined' ? window.location.origin : '',
-      });
+      // Create axios instance with x402 support using the SDK pattern
+      setDemoState({ status: 'loading', step: 'Step 1: Creating x402-enabled axios client...' });
+      const axiosClient = createX402Axios(baseURL);
 
-      let response;
-      try {
-        response = await axiosClient.get('/api/protected/weather', {
-          params: { units: 'celsius' },
-          validateStatus: (status) => status === 402 || status === 200, // Accept 402 and 200
-        });
-      } catch (error: any) {
-        if (error.response?.status === 402) {
-          response = error.response;
-        } else {
-          throw error;
-        }
-      }
+      // Step 1: Make request - the interceptor will handle 402 automatically
+      setDemoState({ status: 'loading', step: 'Step 2: Making request to protected resource...' });
 
-      // Step 2: If we got 402, extract payment requirements
-      if (response.status !== 402) {
-        // Already paid or no payment required
-        const data = response.data;
-        setDemoState({
-          status: 'success',
-          weatherData: data.data,
-          transactionHash: response.headers['x-settlement-tx'],
-          responseHeaders: response.headers as any,
-          requestHeaders: {},
-          paymentDetails: {
-            amount: response.headers['x-payment-amount'] || '0',
-            network: 'polkadot-hub-testnet',
-          },
-        });
-        return;
-      }
-
-      setDemoState({ status: 'loading', step: 'Step 2: Received 402 Payment Required, extracting payment requirements...' });
-
-      const paymentRequirements = response.data;
-      
-      // Step 3: Create signer from buyer's private key (server-side API call)
-      setDemoState({ status: 'loading', step: 'Step 3: Creating payment authorization...' });
-      
-      // Call our API endpoint to create the payment header using buyer's private key
-      // This is done server-side to keep the private key secure
-      const paymentResponse = await axiosClient.post('/api/demo/create-payment', {
-        paymentRequirements,
-      });
-
-      const paymentHeader = paymentResponse.data.paymentHeader;
-
-      // Step 4: Retry request with payment header
-      setDemoState({ status: 'loading', step: 'Step 4: Retrying request with payment authorization...' });
-
-      const finalResponse = await axiosClient.get('/api/protected/weather', {
+      const response = await axiosClient.get('/api/protected/weather', {
         params: { units: 'celsius' },
-        headers: {
-          'X-402-Payment': paymentHeader,
-        },
       });
 
-      // Step 5: Extract response data
-      setDemoState({ status: 'loading', step: 'Step 5: Payment verified and settled!' });
+      // Step 2: Extract response data
+      setDemoState({ status: 'loading', step: 'Step 3: Payment processed successfully!' });
 
-      const data = finalResponse.data;
+      const data = response.data;
 
       // Extract headers
       const responseHeaders: Record<string, string> = {};
-      Object.keys(finalResponse.headers).forEach((key) => {
-        const value = finalResponse.headers[key];
-        if (key.toLowerCase().startsWith('x-') || 
-            ['cache-control', 'content-type', 'date', 'server'].includes(key.toLowerCase())) {
+      Object.keys(response.headers).forEach((key) => {
+        const value = response.headers[key];
+        if (
+          key.toLowerCase().startsWith('x-') ||
+          ['cache-control', 'content-type', 'date', 'server'].includes(key.toLowerCase())
+        ) {
           responseHeaders[key] = String(value);
         }
       });
 
       // Extract payment amount from response headers
-      const paymentAmount = finalResponse.headers['x-payment-amount'] || '0';
+      const paymentAmount = response.headers['x-payment-amount'] || '0';
 
       // Extract transaction hash
-      const transactionHash = finalResponse.headers['x-settlement-tx'];
+      const transactionHash = response.headers['x-settlement-tx'];
 
       // Extract payment response header if available
       let paymentResponseData;
-      const paymentResponseHeader = finalResponse.headers['x-payment-response'];
+      const paymentResponseHeader = response.headers['x-payment-response'];
       if (paymentResponseHeader) {
         try {
-          paymentResponseData = JSON.parse(paymentResponseHeader);
+          paymentResponseData = JSON.parse(paymentResponseHeader as string);
         } catch (e) {
           // Ignore parse errors
         }
       }
+
+      // Try to get payment details from the request if available
+      const requestConfig = response.config as InternalAxiosRequestConfig & {
+        _x402PaymentHeader?: string;
+      };
+      const paymentHeader = requestConfig._x402PaymentHeader;
 
       setDemoState({
         status: 'success',
         weatherData: data.data,
         transactionHash: transactionHash || paymentResponseData?.transactionHash,
         responseHeaders,
-        requestHeaders: {
-          'X-402-Payment': paymentHeader.substring(0, 100) + '...', // Truncate for display
-        },
+        requestHeaders: paymentHeader
+          ? {
+              'X-402-Payment': paymentHeader.substring(0, 100) + '...', // Truncate for display
+            }
+          : {},
         paymentDetails: {
           amount: paymentAmount,
-          network: paymentRequirements.network || 'polkadot-hub-testnet',
-          payTo: paymentRequirements.payTo,
-          token: paymentRequirements.asset,
+          network: 'polkadot-hub-testnet',
+          token: 'native',
         },
       });
     } catch (error) {
@@ -159,7 +206,7 @@ export default function DemoPage() {
             x402 Payment Protocol Demo
           </h1>
           <p className="text-lg text-[color:var(--tone-dark)]/70">
-            HTTP 402 on Polkadot Hub TestNet
+            HTTP 402 on Polkadot using polkadot-x402 SDK
           </p>
         </div>
 
@@ -168,7 +215,8 @@ export default function DemoPage() {
           <div className="text-center mb-12">
             <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-8 max-w-md mx-auto mb-6">
               <p className="text-sm text-[color:var(--tone-dark)]/70 mb-4">
-                This demo uses the buyer's private key from environment variables to sign payment authorizations.
+                This demo uses the polkadot-x402 SDK with automatic 402 payment handling.
+                Payment authorization is created server-side to keep private keys secure.
               </p>
               <button
                 onClick={runDemo}
@@ -340,7 +388,7 @@ export default function DemoPage() {
               )}
 
               {/* Request Headers */}
-              {demoState.status === 'success' && demoState.requestHeaders && (
+              {demoState.status === 'success' && demoState.requestHeaders && Object.keys(demoState.requestHeaders).length > 0 && (
                 <div>
                   <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-3">Payment Authorization</p>
                   <CodeBlock
@@ -353,31 +401,31 @@ export default function DemoPage() {
               {/* How it works */}
               {demoState.status === 'success' && (
                 <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-6">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">x402 Payment Flow</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">x402 Payment Flow (SDK)</p>
                   <ol className="space-y-3 text-sm text-[color:var(--tone-dark)]/80">
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">1.</span>
-                      <span>Initial Request: Tries to access resource (no payment)</span>
+                      <span>Create x402-enabled axios client using SDK pattern</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">2.</span>
-                      <span>Receives 402 Payment Required with payment requirements</span>
+                      <span>Make request - axios interceptor detects 402 response</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">3.</span>
-                      <span>Buyer signs EIP-712 authorization (approval) using private key</span>
+                      <span>SDK calls server endpoint to create payment authorization (private key stays secure)</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">4.</span>
-                      <span>Retries request with X-402-Payment header containing authorization</span>
+                      <span>Interceptor automatically retries request with X-402-Payment header</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">5.</span>
-                      <span>Facilitator verifies authorization and calls transferWithAuthorization on token contract</span>
+                      <span>Server verifies payment and settles on-chain</span>
                     </li>
                     <li className="flex gap-3">
                       <span className="font-semibold text-[color:var(--tone-dark)]">6.</span>
-                      <span>Server returns protected resource with settlement transaction hash</span>
+                      <span>Protected resource returned with settlement transaction hash</span>
                     </li>
                   </ol>
                 </div>

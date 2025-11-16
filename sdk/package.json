@@ -1,0 +1,51 @@
+{
+  "name": "polkadot-x402",
+  "version": "0.1.0",
+  "description": "X402 payment protocol implementation for Polkadot networks",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "polkadot",
+    "x402",
+    "payment",
+    "http-402",
+    "blockchain",
+    "substrate"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@polkadot/api": "^12.0.0",
+    "@polkadot/keyring": "^13.0.0",
+    "@polkadot/util": "^13.0.0",
+    "@polkadot/util-crypto": "^13.0.0",
+    "axios": "^1.13.2",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsup": "^8.0.0",
+    "typescript": "^5"
+  },
+  "peerDependencies": {
+    "axios": "^1.0.0"
+  }
+}
+

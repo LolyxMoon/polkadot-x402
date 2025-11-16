@@ -4,7 +4,7 @@
  */
 
 import { ethers } from 'ethers';
-import { env } from '@/lib/env';
+import { env, addresses } from '@/lib/env';
 import { getNetworkConfig } from './networks';
 
 let wallet: ethers.Wallet | null = null;
@@ -71,9 +71,12 @@ export function getBuyerWallet(network?: string): ethers.Wallet {
 }
 
 /**
- * Get seller wallet instance
+ * Get seller wallet instance (only if SELLER_PRIVATE_KEY is provided)
  */
-export function getSellerWallet(network?: string): ethers.Wallet {
+export function getSellerWallet(network?: string): ethers.Wallet | null {
+  if (!env.SELLER_PRIVATE_KEY) {
+    return null;
+  }
   const networkId = network || env.NETWORK;
   const provider = getProvider(networkId);
   return new ethers.Wallet(env.SELLER_PRIVATE_KEY, provider);
@@ -97,10 +100,24 @@ export async function getBuyerAddress(network?: string): Promise<string> {
 
 /**
  * Get seller wallet address
+ * Uses SELLER_ADDRESS env var if available, otherwise derives from SELLER_PRIVATE_KEY
  */
 export async function getSellerAddress(network?: string): Promise<string> {
-  const sellerWallet = getSellerWallet(network);
-  return await sellerWallet.getAddress();
+  // Use address directly if provided
+  if (env.SELLER_ADDRESS) {
+    return env.SELLER_ADDRESS;
+  }
+  
+  // Otherwise derive from private key if available
+  if (env.SELLER_PRIVATE_KEY) {
+    const sellerWallet = getSellerWallet(network);
+    if (sellerWallet) {
+      return await sellerWallet.getAddress();
+    }
+  }
+  
+  // Fallback to addresses from env.ts (which should have validated this)
+  return addresses.seller;
 }
 
 /**
