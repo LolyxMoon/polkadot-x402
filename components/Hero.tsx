@@ -15,10 +15,10 @@ export default function Hero() {
               stack to verify, settle, and observe Polkadot-linked x402 flows.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <a href="/docs" className="btn btn-primary text-base">
+              <a href="/docs" className="btn btn-primary">
                 Read the docs
               </a>
-              <a href="/docs#api" className="btn btn-outline text-base">
+              <a href="/docs#api" className="btn btn-outline">
                 API reference
               </a>
             </div>
