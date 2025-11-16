@@ -86,7 +86,7 @@ export function createX402ResponseInterceptor(
 
         // Add payment header to request headers
         if (!originalRequest.headers) {
-          originalRequest.headers = {};
+          originalRequest.headers = {} as any;
         }
         originalRequest.headers['X-402-Payment'] = paymentResult.paymentHeader;
         if (paymentRequirements.resource) {

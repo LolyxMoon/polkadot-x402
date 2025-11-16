@@ -129,7 +129,7 @@ export async function verifyX402Payment(
     try {
       const api = await ApiPromise.create({ provider: new WsProvider(networkConfig.rpcUrl) });
       const accountInfo = await api.query.system.account(paymentData.from);
-      const balance = accountInfo.data.free.toBigInt();
+      const balance = (accountInfo as any).data.free.toBigInt();
       const requiredAmount = BigInt(paymentData.amount);
       
       if (balance < requiredAmount) {

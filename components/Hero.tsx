@@ -11,8 +11,9 @@ export default function Hero() {
               Deterministic x402 facilitation with a two-tone control surface.
             </h1>
             <p className="text-lg md:text-xl text-[color:var(--tone-muted)] max-w-2xl mb-10">
-              Operate a payment facilitator that feels crafted, not generated. A single
-              stack to verify, settle, and observe Polkadot-linked x402 flows.
+              A complete x402 payment facilitator for Polkadot Hub TestNet. Built-in SDK provides
+              verification, settlement, and client-side payment handling. Native PAS token transfers
+              with automatic 402 response handling. Production-ready facilitator endpoints and axios interceptor.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <a href="/docs" className="btn btn-primary">

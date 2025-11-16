@@ -18,8 +18,9 @@ export default function Home() {
               </h2>
             </div>
             <p className="text-[color:var(--tone-muted)] max-w-xl">
-              Built for operators who prefer stacked terminals over gradients. Two touchpoints:
-              verification and settlement—both deterministic.
+              A production-ready x402 facilitator for Polkadot Hub TestNet. Includes verification and settlement
+              endpoints, client-side payment utilities, and an axios wrapper for automatic 402 handling.
+              Native PAS token support with EIP-712 signature validation.
           </p>
         </div>
 
@@ -49,8 +50,8 @@ export default function Home() {
                   <path d="M3 5h18M3 12h18M3 19h18" strokeLinecap="round" />
                 </svg>
               }
-              title="Network discipline"
-              description="Polkadot Hub TestNet by default, custom EVM stacks via env controls—no dashboards required."
+              title="Polkadot Hub TestNet"
+              description="EVM-compatible chain with native PAS token support. Full x402 facilitator implementation with verify, settle, and supported endpoints."
             />
           </div>
         </div>
@@ -127,6 +128,62 @@ export default function Home() {
 
       <section className="section-dark border-b border-[color:var(--tone-border)]">
         <div className="max-w-6xl mx-auto px-6 sm:px-10 lg:px-12 py-20">
+          <div className="text-center mb-16">
+            <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-muted)] mb-4">
+              SDK
+            </p>
+            <h3 className="text-3xl md:text-4xl font-semibold text-[color:var(--tone-light)] mb-6">
+              Polkadot x402 SDK
+            </h3>
+            <p className="text-lg text-[color:var(--tone-muted)] max-w-3xl mx-auto">
+              Complete SDK for Polkadot Hub TestNet (EVM-compatible). Facilitator endpoints for verification
+              and settlement, client-side payment creation utilities, and axios interceptor for automatic
+              402 response handling. Native PAS token transfers supported.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="card">
+              <div className="mb-4">
+                <svg className="w-8 h-8 text-[color:var(--tone-light)] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-[color:var(--tone-light)] mb-2">Facilitator Endpoints</h4>
+              <p className="text-sm text-[color:var(--tone-muted)]">
+                <code>/api/facilitator/verify</code>, <code>/api/facilitator/settle</code>, and <code>/api/facilitator/supported</code>.
+                EIP-712 signature validation with deterministic verification results.
+              </p>
+            </div>
+            <div className="card">
+              <div className="mb-4">
+                <svg className="w-8 h-8 text-[color:var(--tone-light)] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-[color:var(--tone-light)] mb-2">Client Utilities</h4>
+              <p className="text-sm text-[color:var(--tone-muted)]">
+                Server-side payment creation endpoint (<code>/api/demo/create-payment</code>) keeps private keys secure.
+                Axios interceptor automatically handles 402 responses and retries with payment headers.
+              </p>
+            </div>
+            <div className="card">
+              <div className="mb-4">
+                <svg className="w-8 h-8 text-[color:var(--tone-light)] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-[color:var(--tone-light)] mb-2">Native Token Support</h4>
+              <p className="text-sm text-[color:var(--tone-muted)]">
+                Native PAS token transfers on Polkadot Hub TestNet. Direct native token settlement without
+                ERC-20 contract calls. ERC20 token support available via token address configuration.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-dark border-b border-[color:var(--tone-border)]">
+        <div className="max-w-6xl mx-auto px-6 sm:px-10 lg:px-12 py-20">
           <div className="grid md:grid-cols-2 gap-10">
             <div className="space-y-6">
               <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-muted)]">Uptime</p>
@@ -171,13 +228,14 @@ export default function Home() {
       <section className="section-light">
         <div className="max-w-4xl mx-auto px-6 sm:px-10 lg:px-12 py-20 text-center">
           <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--tone-dark)]/60 mb-6">
-            Documentation first
+            Get Started
           </p>
           <h3 className="text-4xl font-semibold text-[color:var(--tone-dark)] mb-6">
             Everything lives in the docs. No guessing.
           </h3>
           <p className="text-lg text-[color:var(--tone-dark)]/80 mb-10">
-            Start with setup, stay for the API reference. Both are written like a runbook, not a brochure.
+            Complete x402 facilitator implementation for Polkadot Hub TestNet. API reference for facilitator endpoints,
+            client-side payment utilities, and middleware configuration. See the demo for an end-to-end payment flow.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a href="/demo" className="btn btn-primary text-base">

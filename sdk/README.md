@@ -1,6 +1,6 @@
 # polkadot-x402
 
-X402 payment protocol implementation for Polkadot networks. This SDK provides facilitator functions, client utilities, and an axios wrapper for handling HTTP 402 Payment Required responses with automatic payment processing.
+X402 payment protocol implementation for **Polkadot Hub TestNet** (EVM-compatible). This SDK provides facilitator functions, client utilities, and an axios wrapper for handling HTTP 402 Payment Required responses with automatic payment processing.
 
 ## Installation
 
@@ -10,11 +10,12 @@ npm install polkadot-x402
 
 ## Features
 
-- ✅ Native Polkadot support (DOT, KSM, testnets)
-- ✅ Automatic 402 payment handling with axios interceptor
-- ✅ Payment verification and settlement
-- ✅ Full TypeScript support
-- ✅ Multiple network support (Polkadot, Kusama, Westend)
+- ✅ **Polkadot Hub TestNet Support** - EVM-compatible chain with native PAS token
+- ✅ **Automatic 402 Payment Handling** - Axios interceptor for seamless payment processing
+- ✅ **Payment Verification** - EIP-712 signature validation
+- ✅ **Payment Settlement** - Native token transfers from buyer to seller
+- ✅ **Full TypeScript Support** - Complete type definitions included
+- ✅ **Server-Side Signing** - Secure payment authorization creation
 
 ## Quick Start
 
@@ -24,14 +25,14 @@ npm install polkadot-x402
 import { createX402Axios, createSignerFromPrivateKey } from 'polkadot-x402';
 
 // Create a signer from private key
-const signer = createSignerFromPrivateKey('your-private-key', 'polkadot');
+const signer = createSignerFromPrivateKey('your-private-key', 'polkadot-hub-testnet');
 
 // Create axios instance with x402 support
 const axiosInstance = createX402Axios({
   baseURL: 'https://api.example.com',
   x402: {
     signer,
-    network: 'polkadot',
+    network: 'polkadot-hub-testnet',
     onPaymentRequired: (requirements) => {
       console.log('Payment required:', requirements);
     },
@@ -50,15 +51,16 @@ const response = await axiosInstance.get('/protected-resource');
 ```typescript
 import { createSignerFromPrivateKey, createPaymentHeader } from 'polkadot-x402';
 
-const signer = createSignerFromPrivateKey('your-private-key', 'polkadot');
+const signer = createSignerFromPrivateKey('your-private-key', 'polkadot-hub-testnet');
 
 const paymentRequirements = {
   x402Version: 1,
   scheme: 'exact',
-  network: 'polkadot',
-  maxAmountRequired: '10000000000', // 0.01 DOT (10 decimals)
-  payTo: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
+  network: 'polkadot-hub-testnet',
+  maxAmountRequired: '1000000000000000000', // 1 PAS (18 decimals)
+  payTo: '0x9A78BC1B83242189C9d456067F56FFEEfba4376c',
   resource: '/api/protected-resource',
+  asset: 'native',
 };
 
 const paymentResult = await createPaymentHeader(signer, {
@@ -69,6 +71,11 @@ const paymentResult = await createPaymentHeader(signer, {
 });
 
 // Use paymentResult.paymentHeader in X-402-Payment header
+const response = await fetch('https://api.example.com/protected-resource', {
+  headers: {
+    'X-402-Payment': paymentResult.paymentHeader,
+  },
+});
 ```
 
 ### Facilitator Functions
@@ -105,7 +112,45 @@ if (result.success) {
 }
 ```
 
+## Network Configuration
+
+### Polkadot Hub TestNet
+
+- **Network Name**: Polkadot Hub TestNet
+- **Currency Symbol**: PAS
+- **Chain ID**: 420420422
+- **RPC URL**: `https://testnet-passet-hub-eth-rpc.polkadot.io`
+- **Block Explorer**: `https://blockscout-passet-hub.parity-testnet.parity.io/`
+
+```typescript
+import { getNetworkConfig } from 'polkadot-x402';
+
+const config = getNetworkConfig('polkadot-hub-testnet');
+console.log(config.chainId); // 420420422
+```
+
+## Payment Flow
+
+1. **Client Request**: Client makes request to protected resource
+2. **402 Response**: Server responds with HTTP 402 and payment requirements
+3. **Payment Authorization**: Client creates EIP-712 signed payment authorization
+4. **Retry with Payment**: Client retries request with `X-402-Payment` header
+5. **Verification**: Server verifies payment signature and requirements
+6. **Settlement**: Server settles payment by transferring tokens on-chain
+7. **Success**: Protected resource is returned with transaction hash
+
 ## API Reference
+
+### Types
+
+```typescript
+import type {
+  PaymentRequirements,
+  VerificationResult,
+  SettlementResult,
+  PolkadotSigner,
+} from 'polkadot-x402';
+```
 
 ### Network Configuration
 
@@ -113,10 +158,10 @@ if (result.success) {
 import { getNetworkConfig, getSupportedNetworks } from 'polkadot-x402';
 
 // Get network configuration
-const config = getNetworkConfig('polkadot');
+const config = getNetworkConfig('polkadot-hub-testnet');
 
 // Get all supported networks
-const networks = getSupportedNetworks(); // ['polkadot', 'kusama', 'westend', ...]
+const networks = getSupportedNetworks(); // ['polkadot-hub-testnet']
 ```
 
 ### Signer Creation
@@ -124,8 +169,8 @@ const networks = getSupportedNetworks(); // ['polkadot', 'kusama', 'westend', ..
 ```typescript
 import { createSignerFromPrivateKey } from 'polkadot-x402';
 
-// Create signer from private key (hex or mnemonic)
-const signer = createSignerFromPrivateKey('0x...', 'polkadot');
+// Create signer from private key (hex format)
+const signer = createSignerFromPrivateKey('0x...', 'polkadot-hub-testnet');
 ```
 
 ### Payment Header Creation
@@ -136,27 +181,19 @@ import { createPaymentHeader } from 'polkadot-x402';
 const result = await createPaymentHeader(signer, {
   from: signer.address,
   to: 'recipient-address',
-  amount: '10000000000',
+  amount: '1000000000000000000',
   requirements: paymentRequirements,
 });
 ```
 
 ## Supported Networks
 
-- **Polkadot** (`polkadot`) - Mainnet
-- **Kusama** (`kusama`) - Canary network
-- **Westend** (`westend`) - Testnet
-- **Polkadot Testnet** (`polkadot-testnet`)
+Currently supports:
+- **Polkadot Hub TestNet** (`polkadot-hub-testnet`) - EVM-compatible testnet
 
-## Payment Flow
+## Native Token Support
 
-1. Client makes request to protected resource
-2. Server responds with HTTP 402 and payment requirements
-3. Axios interceptor detects 402 response
-4. Client creates payment authorization using signer
-5. Client retries request with `X-402-Payment` header
-6. Server verifies payment and settles on-chain
-7. Server returns protected resource with settlement transaction hash
+This SDK supports native PAS token transfers on Polkadot Hub TestNet. Set `asset: 'native'` in payment requirements to use native tokens instead of ERC-20 tokens.
 
 ## TypeScript Support
 
@@ -168,10 +205,28 @@ import type {
   VerificationResult,
   SettlementResult,
   PolkadotSigner,
+  NetworkConfig,
+  NetworkId,
 } from 'polkadot-x402';
 ```
+
+## Differences from Coinbase x402 SDK
+
+This SDK is specifically designed for Polkadot Hub TestNet and provides:
+
+1. **Custom Network Support**: Full support for Polkadot Hub TestNet without SDK limitations
+2. **Native Token Transfers**: Direct native token settlement without ERC-20 contracts
+3. **EVM-Compatible**: Built specifically for EVM-compatible Polkadot chains
+4. **Custom EIP-712 Signing**: Complete control over payment authorization format
 
 ## License
 
 MIT
 
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.
+
+## Support
+
+For questions or issues, please open an issue on GitHub.

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import CodeBlock from '@/components/CodeBlock';
-import type { PaymentRequirements } from '../../../sdk/src/types';
+import type { PaymentRequirements } from '@/types/x402';
 
 interface DemoState {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -76,13 +76,17 @@ function createX402Axios(baseURL: string): AxiosInstance {
 
         const paymentHeader = paymentResponse.data.paymentHeader;
 
+        // Store payment requirements in request config for later extraction
+        (originalRequest as any)._x402PaymentRequirements = paymentRequirements;
+        (originalRequest as any)._x402PaymentHeader = paymentHeader;
+
         // Add payment header to request headers
         if (!originalRequest.headers) {
-          originalRequest.headers = {};
+          originalRequest.headers = {} as any;
         }
-        originalRequest.headers['X-402-Payment'] = paymentHeader;
+        (originalRequest.headers as any)['X-402-Payment'] = paymentHeader;
         // Always send payment details header so middleware can extract the correct network and other details
-        originalRequest.headers['X-402-Payment-Details'] = JSON.stringify(
+        (originalRequest.headers as any)['X-402-Payment-Details'] = JSON.stringify(
           paymentRequirements
         );
 
@@ -146,15 +150,19 @@ export default function DemoPage() {
         }
       });
 
-      // Extract payment amount from response headers
-      const paymentAmount = response.headers['x-payment-amount'] || '0';
+      // Extract payment amount from response headers (case-insensitive)
+      const paymentAmount = response.headers['x-payment-amount'] || 
+                           response.headers['X-Payment-Amount'] || 
+                           '0';
 
-      // Extract transaction hash
-      const transactionHash = response.headers['x-settlement-tx'];
+      // Extract transaction hash (case-insensitive)
+      const transactionHash = response.headers['x-settlement-tx'] || 
+                              response.headers['X-Settlement-Tx'];
 
       // Extract payment response header if available
       let paymentResponseData;
-      const paymentResponseHeader = response.headers['x-payment-response'];
+      const paymentResponseHeader = response.headers['x-payment-response'] || 
+                                   response.headers['X-Payment-Response'];
       if (paymentResponseHeader) {
         try {
           paymentResponseData = JSON.parse(paymentResponseHeader as string);
@@ -166,12 +174,24 @@ export default function DemoPage() {
       // Try to get payment details from the request if available
       const requestConfig = response.config as InternalAxiosRequestConfig & {
         _x402PaymentHeader?: string;
+        _x402PaymentRequirements?: PaymentRequirements;
       };
       const paymentHeader = requestConfig._x402PaymentHeader;
+      const paymentRequirements = requestConfig._x402PaymentRequirements;
+
+      // Extract payment details from payment requirements or use defaults
+      const paymentDetails = {
+        amount: paymentAmount || paymentRequirements?.maxAmountRequired || '0',
+        network: paymentRequirements?.network || 'polkadot-hub-testnet',
+        token: paymentRequirements?.asset === 'native' || !paymentRequirements?.asset 
+          ? 'native' 
+          : paymentRequirements?.asset || 'native',
+        payTo: paymentRequirements?.payTo,
+      };
 
       setDemoState({
         status: 'success',
-        weatherData: data.data,
+        weatherData: data.data || data, // Handle both nested and flat data
         transactionHash: transactionHash || paymentResponseData?.transactionHash,
         responseHeaders,
         requestHeaders: paymentHeader
@@ -179,11 +199,7 @@ export default function DemoPage() {
               'X-402-Payment': paymentHeader.substring(0, 100) + '...', // Truncate for display
             }
           : {},
-        paymentDetails: {
-          amount: paymentAmount,
-          network: 'polkadot-hub-testnet',
-          token: 'native',
-        },
+        paymentDetails,
       });
     } catch (error) {
       setDemoState({
@@ -199,38 +215,38 @@ export default function DemoPage() {
 
   return (
     <main className="min-h-screen bg-[color:var(--tone-light)] pt-16">
-      <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
         {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-[color:var(--tone-dark)] mb-3">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-[color:var(--tone-dark)] mb-2">
             x402 Payment Protocol Demo
           </h1>
-          <p className="text-lg text-[color:var(--tone-dark)]/70">
-            HTTP 402 on Polkadot using polkadot-x402 SDK
+          <p className="text-base text-[color:var(--tone-dark)]/70">
+            HTTP 402 on Polkadot Hub TestNet
           </p>
         </div>
 
-        {/* Start Demo Button */}
+        {/* Start Demo Section */}
         {demoState.status === 'idle' && (
-          <div className="text-center mb-12">
-            <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-8 max-w-md mx-auto mb-6">
+          <div className="max-w-lg mx-auto mb-8">
+            <div className="bg-white border border-[color:var(--tone-border)] rounded-lg p-6">
               <p className="text-sm text-[color:var(--tone-dark)]/70 mb-4">
                 This demo uses the polkadot-x402 SDK with automatic 402 payment handling.
                 Payment authorization is created server-side to keep private keys secure.
               </p>
-              <button
-                onClick={runDemo}
-                className="btn btn-primary text-lg px-8 py-4"
-              >
+            <button
+              onClick={runDemo}
+                className="btn btn-primary w-full"
+            >
                 Request Weather Data →
-              </button>
+            </button>
             </div>
           </div>
         )}
 
         {/* Loading State */}
         {demoState.status === 'loading' && (
-          <div className="text-center mb-12">
+          <div className="text-center mb-8">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[color:var(--tone-dark)]"></div>
             <p className="mt-4 text-[color:var(--tone-dark)]/70">{demoState.step || 'Processing payment...'}</p>
           </div>
@@ -253,36 +269,14 @@ export default function DemoPage() {
                 </p>
               </div>
 
-              {/* Weather Data */}
+              {/* API Response Data */}
               {demoState.status === 'success' && demoState.weatherData && (
                 <div className="bg-[color:var(--tone-light)]/50 border border-[color:var(--tone-border)] rounded-xl p-6">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">Weather Data</p>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">City:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.weatherData.city}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">Temperature:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">
-                        {demoState.weatherData.temperature} {demoState.weatherData.units}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">Condition:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.weatherData.condition}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">Humidity:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.weatherData.humidity}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[color:var(--tone-dark)]/70">Wind Speed:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">
-                        {demoState.weatherData.windSpeed} {demoState.weatherData.windSpeedUnits}
-                      </span>
-                    </div>
-                  </div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--tone-dark)]/60 mb-4">API Response Data</p>
+                  <CodeBlock
+                    code={JSON.stringify(demoState.weatherData, null, 2)}
+                    language="json"
+                  />
                 </div>
               )}
 
@@ -360,26 +354,30 @@ export default function DemoPage() {
                     <div className="flex justify-between">
                       <span className="text-[color:var(--tone-dark)]/70">Amount:</span>
                       <span className="text-[color:var(--tone-dark)] font-semibold">
-                        {demoState.paymentDetails.amount ? (Number(demoState.paymentDetails.amount) / 1e18).toFixed(6) : '0'} PAS
+                        {demoState.paymentDetails.amount && Number(demoState.paymentDetails.amount) > 0
+                          ? (Number(demoState.paymentDetails.amount) / 1e18).toFixed(6) + ' PAS'
+                          : 'N/A'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-[color:var(--tone-dark)]/70">Network:</span>
-                      <span className="text-[color:var(--tone-dark)] font-semibold">{demoState.paymentDetails.network}</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">
+                        {demoState.paymentDetails.network || 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[color:var(--tone-dark)]/70">Token:</span>
+                      <span className="text-[color:var(--tone-dark)] font-semibold">
+                        {demoState.paymentDetails.token === 'native' ? 'Native (PAS)' : (demoState.paymentDetails.token || 'N/A')}
+                      </span>
                     </div>
                     {demoState.paymentDetails.payTo && (
                       <div className="flex justify-between">
                         <span className="text-[color:var(--tone-dark)]/70">Pay To:</span>
                         <span className="text-[color:var(--tone-dark)] font-semibold font-mono text-xs">
-                          {demoState.paymentDetails.payTo.substring(0, 10)}...{demoState.paymentDetails.payTo.substring(38)}
-                        </span>
-                      </div>
-                    )}
-                    {demoState.paymentDetails.token && (
-                      <div className="flex justify-between">
-                        <span className="text-[color:var(--tone-dark)]/70">Token:</span>
-                        <span className="text-[color:var(--tone-dark)] font-semibold">
-                          {demoState.paymentDetails.token === 'native' ? 'Native (PAS)' : demoState.paymentDetails.token}
+                          {demoState.paymentDetails.payTo.length > 20
+                            ? `${demoState.paymentDetails.payTo.substring(0, 10)}...${demoState.paymentDetails.payTo.substring(38)}`
+                            : demoState.paymentDetails.payTo}
                         </span>
                       </div>
                     )}

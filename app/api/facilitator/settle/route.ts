@@ -136,10 +136,23 @@ export async function POST(request: NextRequest) {
     }
 
     // Settle the payment
+    console.log('POST /api/facilitator/settle: Starting settlement', {
+      payloadLength: body.payload?.length,
+      payloadType: typeof body.payload,
+      network: body.details?.network,
+      scheme: body.details?.scheme,
+    });
+
     const result: SettlementResult = await settleX402Payment(
       body.payload,
       body.details
     );
+
+    console.log('POST /api/facilitator/settle: Settlement result', {
+      success: result.success,
+      transactionHash: result.transactionHash,
+      error: result.error,
+    });
 
     // Return appropriate status code based on settlement result
     if (result.success) {

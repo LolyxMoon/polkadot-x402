@@ -10,6 +10,13 @@ export interface PaymentRequirements {
   x402Version: number;
   scheme: string;
   network: string;
+  maxAmountRequired?: string;
+  payTo?: string;
+  asset?: string;
+  resource?: string;
+  description?: string;
+  mimeType?: string;
+  maxTimeoutSeconds?: number;
   extra?: Record<string, any>;
 }
 

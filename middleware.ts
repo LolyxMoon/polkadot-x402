@@ -11,8 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyX402Payment } from './lib/x402/verify';
-import { settleX402Payment } from './lib/x402/settle';
+// Middleware calls facilitator endpoints via HTTP, not SDK directly
 import { getWalletAddress, getSellerAddress } from './lib/evm/wallet';
 import { getNetworkConfig } from './lib/evm/networks';
 import { env } from './lib/env';
@@ -75,8 +74,19 @@ function extractPayment(request: NextRequest): {
   }
 
   try {
+    // Try to decode base64 first (x402 SDK returns base64-encoded JSON)
+    let decodedHeader = paymentHeader;
+    try {
+      // Check if it's base64 encoded
+      if (!paymentHeader.startsWith('0x') && !paymentHeader.startsWith('{')) {
+        decodedHeader = Buffer.from(paymentHeader, 'base64').toString('utf-8');
+      }
+    } catch {
+      // Not base64, use as-is
+    }
+
     // Parse the payment header (can be JSON or just the payload)
-    const parsed = JSON.parse(paymentHeader);
+    const parsed = JSON.parse(decodedHeader);
     
     if (parsed.payload && parsed.details) {
       return {
@@ -94,6 +104,27 @@ function extractPayment(request: NextRequest): {
           scheme: 'exact',
           network: env.NETWORK,
         },
+      };
+    }
+
+    // If parsed is an object with x402Version, scheme, network, payload, etc.
+    // This is the format from x402 SDK's signPaymentHeader
+    if (parsed.x402Version && parsed.payload) {
+      return {
+        payload: parsed.payload,
+        details: {
+          x402Version: parsed.x402Version,
+          scheme: parsed.scheme,
+          network: parsed.network,
+          maxAmountRequired: parsed.maxAmountRequired || '',
+          resource: parsed.resource || '',
+          description: parsed.description || '',
+          mimeType: parsed.mimeType || 'application/json',
+          payTo: parsed.payTo || '',
+          maxTimeoutSeconds: parsed.maxTimeoutSeconds || 300,
+          asset: parsed.asset || '',
+          extra: parsed.extra || {},
+        } as PaymentRequirements,
       };
     }
   } catch {
@@ -192,13 +223,13 @@ export async function middleware(request: NextRequest) {
   const fullPaymentRequirements: PaymentRequirements & Record<string, any> = {
     ...details,
     // Override only if not provided in details, to ensure verification matches signed payment
-    maxAmountRequired: details.maxAmountRequired || paymentConfig.amount,
-    resource: details.resource || pathname,
-    description: details.description || paymentConfig.description || 'Access to this resource requires payment',
-    payTo: details.payTo || sellerAddress,
-    asset: details.asset || paymentConfig.token || env.TOKEN_ADDRESS,
-    mimeType: details.mimeType || 'application/json',
-    maxTimeoutSeconds: details.maxTimeoutSeconds || 300,
+    maxAmountRequired: (details as any).maxAmountRequired || paymentConfig.amount,
+    resource: (details as any).resource || pathname,
+    description: (details as any).description || paymentConfig.description || 'Access to this resource requires payment',
+    payTo: (details as any).payTo || sellerAddress,
+    asset: (details as any).asset || paymentConfig.token || env.TOKEN_ADDRESS,
+    mimeType: (details as any).mimeType || 'application/json',
+    maxTimeoutSeconds: (details as any).maxTimeoutSeconds || 300,
     // Ensure required fields are set
     x402Version: details.x402Version || 1,
     scheme: details.scheme || 'exact',
@@ -206,17 +237,76 @@ export async function middleware(request: NextRequest) {
   };
 
   // Debug logging
+  const payloadStr = typeof payload === 'string' ? payload : ((payload as any)?.payload || JSON.stringify(payload));
   console.log('Middleware: Verifying payment', {
-    payloadLength: payload.length,
-    payloadPrefix: payload.substring(0, 20),
+    payloadLength: payloadStr.length,
+    payloadPrefix: payloadStr.substring(0, 20),
+    payloadType: typeof payload,
     network: fullPaymentRequirements.network,
     scheme: fullPaymentRequirements.scheme,
     payTo: fullPaymentRequirements.payTo,
     amount: fullPaymentRequirements.maxAmountRequired,
   });
 
-  // Verify the payment using x402 verification
-  const verification = await verifyX402Payment(payload, fullPaymentRequirements);
+  // Verify the payment by calling the facilitator verify endpoint
+  // Prepare payload for verification (must be a string)
+  let payloadForVerification: string;
+  if (typeof payload === 'string') {
+    payloadForVerification = payload;
+  } else if (payload && typeof payload === 'object') {
+    // If it's the full payment object, stringify it
+    if ((payload as any).x402Version && (payload as any).payload) {
+      payloadForVerification = JSON.stringify(payload);
+    } else {
+      // Just payload part - reconstruct full object
+      payloadForVerification = JSON.stringify({
+        x402Version: fullPaymentRequirements.x402Version || 1,
+        scheme: fullPaymentRequirements.scheme || 'exact',
+        network: fullPaymentRequirements.network,
+        payload: payload,
+      });
+    }
+  } else {
+    payloadForVerification = JSON.stringify(payload);
+  }
+
+  // Call facilitator verify endpoint
+  // Ensure FACILITATOR_URL is the base path, not the settle endpoint
+  let facilitatorBaseUrl = env.FACILITATOR_URL || '/api/facilitator';
+  // Remove any trailing paths to ensure we have the base URL
+  if (facilitatorBaseUrl.includes('/settle') || facilitatorBaseUrl.includes('/verify')) {
+    facilitatorBaseUrl = facilitatorBaseUrl.split('/').slice(0, -1).join('/') || '/api/facilitator';
+  }
+  const verifyUrl = `${facilitatorBaseUrl}/verify`;
+  
+  let verification: { valid: boolean; error?: string; details?: any };
+  try {
+    const verifyResponse = await fetch(verifyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        payload: payloadForVerification,
+        details: fullPaymentRequirements,
+      }),
+    });
+
+    if (!verifyResponse.ok) {
+      const errorData = await verifyResponse.json().catch(() => ({}));
+      verification = {
+        valid: false,
+        error: errorData.error || `Verification failed: ${verifyResponse.statusText}`,
+      };
+    } else {
+      verification = await verifyResponse.json();
+    }
+  } catch (error) {
+    verification = {
+      valid: false,
+      error: error instanceof Error ? error.message : 'Verification request failed',
+    };
+  }
   
   console.log('Middleware: Verification result', {
     valid: verification.valid,
@@ -228,12 +318,18 @@ export async function middleware(request: NextRequest) {
   if (!verification.valid) {
     const network = env.NETWORK;
     const sellerAddress = await getSellerAddress(network);
+    // For native tokens, use "native" string (not an address)
+    // The client will convert this to zero address when creating payment
     const tokenAddress = paymentConfig.token || env.TOKEN_ADDRESS;
+    
+    // Sanitize error message to avoid invalid header values
+    const errorMessage = verification.error || 'Invalid payment';
+    const sanitizedError = errorMessage.replace(/\n/g, ' ').substring(0, 200);
     
     return NextResponse.json(
       {
         error: 'Payment verification failed',
-        details: verification.error,
+        details: sanitizedError,
         maxAmountRequired: paymentConfig.amount,
         resource: pathname,
         payTo: sellerAddress,
@@ -249,7 +345,7 @@ export async function middleware(request: NextRequest) {
         status: 402,
         headers: {
           'Content-Type': 'application/json',
-          'X-402-Error': verification.error || 'Invalid payment',
+          'X-402-Error': sanitizedError,
           'Access-Control-Allow-Origin': '*',
         },
       }
@@ -329,9 +425,58 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Payment verified successfully - now settle the payment
-  const settlement = await settleX402Payment(payload, fullPaymentRequirements);
+  // Payment verified successfully - now settle the payment via facilitator endpoint
+  // Prepare payload for settlement (must be a string)
+  let payloadForSettlement: string;
+  if (typeof payload === 'string') {
+    payloadForSettlement = payload;
+  } else if (payload && typeof payload === 'object') {
+    if ((payload as any).x402Version && (payload as any).payload) {
+      payloadForSettlement = JSON.stringify(payload);
+    } else {
+      payloadForSettlement = JSON.stringify({
+        x402Version: fullPaymentRequirements.x402Version || 1,
+        scheme: fullPaymentRequirements.scheme || 'exact',
+        network: fullPaymentRequirements.network,
+        payload: payload,
+      });
+    }
+  } else {
+    payloadForSettlement = JSON.stringify(payload);
+  }
+
+  // Call facilitator settle endpoint (use same base URL)
+  const settleUrl = `${facilitatorBaseUrl}/settle`;
   
+  let settlement: { success: boolean; transactionHash?: string; error?: string };
+  try {
+    const settleResponse = await fetch(settleUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        payload: payloadForSettlement,
+        details: fullPaymentRequirements,
+      }),
+    });
+
+    if (!settleResponse.ok) {
+      const errorData = await settleResponse.json().catch(() => ({}));
+      settlement = {
+        success: false,
+        error: errorData.error || `Settlement failed: ${settleResponse.statusText}`,
+      };
+    } else {
+      settlement = await settleResponse.json();
+    }
+  } catch (error) {
+    settlement = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Settlement request failed',
+    };
+  }
+
   if (!settlement.success) {
     // Settlement failed - return error
     const network = env.NETWORK;

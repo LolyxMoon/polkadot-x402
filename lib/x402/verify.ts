@@ -1,21 +1,18 @@
 /**
  * x402 Payment Verification Logic
- * Verifies payment payloads according to x402 protocol specifications
+ * Verifies payment payloads using our own EIP-712 verification
  */
 
 import type { PaymentRequirements, VerificationResult } from '@/types/x402';
 import { getNetworkConfig } from '@/lib/evm/networks';
-import { verify } from 'x402/facilitator';
-import { createSigner } from 'x402/types';
-import { createPublicClient, http } from 'viem';
+import { ethers } from 'ethers';
 import { getProvider } from '@/lib/evm/wallet';
-import { env } from '@/lib/env';
 
 /**
  * Verify an x402 payment payload
  * 
  * This function validates:
- * - Payment signature validity
+ * - Payment signature validity using EIP-712
  * - Payment meets specified requirements
  * - Nonce/timestamp for replay protection
  * - Payment format and structure
@@ -48,8 +45,9 @@ export async function verifyX402Payment(
     }
 
     // Validate network is supported
+    let networkConfig;
     try {
-      getNetworkConfig(requirements.network);
+      networkConfig = getNetworkConfig(requirements.network);
     } catch (error) {
       return {
         valid: false,
@@ -57,164 +55,166 @@ export async function verifyX402Payment(
       };
     }
 
-    // Parse payload (assuming it's a hex-encoded string)
-    // In a real implementation, this would use the x402 SDK to parse the payload
+    // Parse payload - can be base64-encoded JSON or hex string
     if (!payload || typeof payload !== 'string') {
       return {
         valid: false,
-        error: 'Invalid payload format.',
+        error: 'Invalid payload format: must be a string',
       };
     }
 
-    // Basic payload validation
-    if (!payload.startsWith('0x')) {
+    // Decode base64-encoded JSON payload
+    let paymentData: any;
+    try {
+      // Try to decode as base64 JSON
+      if (!payload.startsWith('0x') && !payload.startsWith('{')) {
+        const decoded = Buffer.from(payload, 'base64').toString('utf-8');
+        paymentData = JSON.parse(decoded);
+      } else if (payload.startsWith('{')) {
+        paymentData = JSON.parse(payload);
+      } else {
+        return {
+          valid: false,
+          error: 'Invalid payload format: expected base64-encoded JSON',
+        };
+      }
+    } catch (error) {
       return {
         valid: false,
-        error: 'Payload must be a hex string starting with 0x',
+        error: 'Failed to parse payload: ' + (error instanceof Error ? error.message : 'Invalid format'),
       };
     }
 
-    // For "exact" scheme, verify the payload structure
-    if (requirements.scheme === 'exact') {
-      // Basic payload format validation
-      const payloadLength = payload.length;
-      if (payloadLength < 66) {
-        return {
-          valid: false,
-          error: 'Payload too short to be valid',
-        };
-      }
+    // Extract signature and authorization from payload
+    const signature = paymentData?.payload?.signature || paymentData?.signature;
+    const authorization = paymentData?.payload?.authorization || paymentData?.authorization;
 
-      // Parse and verify payment payload
-      // Note: Full EIP-712 signature verification requires x402 SDK integration
-      // This implementation provides basic validation - integrate x402 SDK for production
-      try {
-        // Basic hex validation
-        if (!/^0x[0-9a-fA-F]+$/.test(payload)) {
-          return {
-            valid: false,
-            error: 'Invalid payload format: must be valid hex string',
-          };
-        }
-
-        // Use x402 SDK to verify payment
-        try {
-          const networkConfig = getNetworkConfig(requirements.network);
-          
-          // Map network for x402 SDK compatibility
-          // For EVM-compatible networks like polkadot-hub-testnet, use base-sepolia as proxy
-          const x402NetworkName = requirements.network === 'polkadot-hub-testnet' 
-            ? 'base-sepolia' 
-            : requirements.network;
-          
-          // Create public client for verification (read-only)
-          const publicClient = createPublicClient({
-            chain: {
-              id: networkConfig.chainId,
-              name: networkConfig.name,
-              nativeCurrency: networkConfig.nativeCurrency,
-              rpcUrls: {
-                default: { http: [networkConfig.rpcUrl] },
-              },
-            },
-            transport: http(networkConfig.rpcUrl),
-          });
-
-          // Create connected client for x402 SDK verification (read-only)
-          // For verification, we can use a public client - no private key needed
-          // Use createConnectedClient or pass the publicClient directly
-          // Since verify needs a Signer or ConnectedClient, we'll use the network string approach
-          // But for read-only verification, we can create a signer with a dummy key or use createConnectedClient
-          const signer = await createSigner(x402NetworkName as any, '0x0000000000000000000000000000000000000000000000000000000000000000');
-
-          // Build full payment requirements for x402 SDK
-          // Use the mapped network name for x402 SDK, but keep original in extra
-          const fullRequirements = {
-            scheme: (requirements.scheme || 'exact') as 'exact',
-            network: x402NetworkName as any, // Use mapped network name for SDK
-            maxAmountRequired: (requirements as any).maxAmountRequired || '0',
-            resource: (requirements as any).resource || '',
-            description: (requirements as any).description || '',
-            mimeType: (requirements as any).mimeType || 'application/json',
-            payTo: (requirements as any).payTo || '',
-            maxTimeoutSeconds: (requirements as any).maxTimeoutSeconds || 300,
-            asset: (requirements as any).asset || '',
-            extra: {
-              ...requirements.extra,
-              actualNetwork: requirements.network, // Preserve original network
-            },
-          };
-
-          // Debug logging
-          console.log('verifyX402Payment: Calling x402 SDK verify', {
-            network: x402NetworkName,
-            originalNetwork: requirements.network,
-            payloadLength: payload.length,
-            payloadPrefix: payload.substring(0, 50),
-            requirements: {
-              scheme: fullRequirements.scheme,
-              network: fullRequirements.network,
-              payTo: fullRequirements.payTo,
-              resource: fullRequirements.resource,
-              amount: fullRequirements.maxAmountRequired,
-            },
-          });
-
-          // Verify payment using x402 SDK
-          // This verifies the EIP-712 signature and checks the authorization is valid
-          const verificationResult = await verify(
-            signer,
-            payload as any, // PaymentPayload type
-            fullRequirements
-            // Config parameter removed - not needed for verification
-          );
-
-          console.log('verifyX402Payment: x402 SDK verify result', {
-            isValid: verificationResult.isValid,
-            invalidReason: (verificationResult as any).invalidReason,
-            payer: verificationResult.payer,
-          });
-
-          // Convert x402 SDK response to our VerificationResult format
-          // The verify function returns { isValid: boolean, invalidReason?: string, payer?: string }
-          if (verificationResult.isValid) {
-            // Extract payment details from the payload (we need to parse it)
-            // For now, return basic structure - the middleware will extract amount from verification
-            return {
-              valid: true,
-              details: {
-                amount: (verificationResult as any).details?.amount || (requirements as any).maxAmountRequired || '0',
-                token: (verificationResult as any).details?.token || (requirements as any).asset || '',
-                from: verificationResult.payer || '',
-                to: (requirements as any).payTo || '',
-                nonce: (verificationResult as any).details?.nonce,
-                timestamp: (verificationResult as any).details?.timestamp,
-              },
-            };
-          } else {
-            return {
-              valid: false,
-              error: verificationResult.invalidReason || 'Payment verification failed',
-            };
-          }
-        } catch (error) {
-          return {
-            valid: false,
-            error: error instanceof Error ? error.message : 'Payment verification failed',
-          };
-        }
-      } catch (error) {
-        return {
-          valid: false,
-          error: error instanceof Error ? error.message : 'Payload verification failed',
-        };
-      }
+    if (!signature || !authorization) {
+      return {
+        valid: false,
+        error: 'Missing signature or authorization in payload',
+      };
     }
 
-    return {
-      valid: false,
-      error: `Unsupported payment scheme: ${requirements.scheme}`,
+    // Validate signature format
+    if (!signature.startsWith('0x') || signature.length !== 132) {
+      return {
+        valid: false,
+        error: 'Invalid signature format',
+      };
+    }
+
+    // Extract authorization details
+    const from = authorization.from;
+    const to = authorization.to;
+    const amount = authorization.amount;
+    const nonce = authorization.nonce;
+    const timestamp = authorization.timestamp;
+    const resource = authorization.resource || '';
+    const network = authorization.network || requirements.network;
+    const asset = authorization.asset || '0x0000000000000000000000000000000000000000';
+
+    if (!from || !to || !amount) {
+      return {
+        valid: false,
+        error: 'Missing required fields in authorization',
+      };
+    }
+
+    // Verify network matches
+    if (network !== requirements.network) {
+      return {
+        valid: false,
+        error: `Network mismatch: expected ${requirements.network}, got ${network}`,
+      };
+    }
+
+    // Verify payTo matches
+    if (to.toLowerCase() !== (requirements.payTo || '').toLowerCase()) {
+      return {
+        valid: false,
+        error: `PayTo mismatch: expected ${requirements.payTo}, got ${to}`,
+      };
+    }
+
+    // Verify amount meets requirement
+    const paidAmount = BigInt(amount);
+    const requiredAmount = BigInt(requirements.maxAmountRequired || '0');
+    if (paidAmount < requiredAmount) {
+      return {
+        valid: false,
+        error: `Insufficient amount: paid ${amount}, required ${requirements.maxAmountRequired}`,
+      };
+    }
+
+    // Verify timestamp is not too old (within 5 minutes)
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    if (timestamp && currentTimestamp - timestamp > 300) {
+      return {
+        valid: false,
+        error: 'Payment authorization expired',
+      };
+    }
+
+    // Reconstruct EIP-712 domain and message for verification
+    const domain = {
+      name: 'X402',
+      version: '1',
+      chainId: networkConfig.chainId,
+      verifyingContract: asset,
     };
+
+    const types = {
+      PaymentAuthorization: [
+        { name: 'from', type: 'address' },
+        { name: 'to', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+        { name: 'nonce', type: 'bytes32' },
+        { name: 'timestamp', type: 'uint256' },
+        { name: 'resource', type: 'string' },
+        { name: 'network', type: 'string' },
+      ],
+    };
+
+    const message = {
+      from: from,
+      to: to,
+      amount: BigInt(amount).toString(),
+      nonce: nonce,
+      timestamp: timestamp,
+      resource: resource,
+      network: network,
+    };
+
+    // Verify EIP-712 signature using ethers
+    try {
+      const recoveredAddress = ethers.verifyTypedData(domain, types, message, signature);
+      
+      if (recoveredAddress.toLowerCase() !== from.toLowerCase()) {
+        return {
+          valid: false,
+          error: 'Signature verification failed: address mismatch',
+        };
+      }
+
+      // Payment is valid
+      return {
+        valid: true,
+        details: {
+          amount: amount,
+          token: asset === '0x0000000000000000000000000000000000000000' ? 'native' : asset,
+          from: from,
+          to: to,
+          nonce: nonce,
+          timestamp: timestamp,
+        },
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: 'Signature verification failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
+      };
+    }
   } catch (error) {
     return {
       valid: false,
@@ -222,5 +222,3 @@ export async function verifyX402Payment(
     };
   }
 }
-
-

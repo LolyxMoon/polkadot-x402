@@ -1,15 +1,15 @@
 {
   "name": "polkadot-x402",
   "version": "0.1.0",
-  "description": "X402 payment protocol implementation for Polkadot networks",
+  "description": "X402 payment protocol implementation for Polkadot Hub TestNet (EVM-compatible). Provides facilitator functions, client utilities, and axios wrapper for HTTP 402 Payment Required responses.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     }
   },
   "files": [
@@ -19,18 +19,31 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "polkadot",
+    "polkadot-hub",
     "x402",
     "payment",
     "http-402",
     "blockchain",
-    "substrate"
+    "evm",
+    "ethereum",
+    "micropayments",
+    "api-monetization"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/polkadot-x402.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/polkadot-x402/issues"
+  },
+  "homepage": "https://github.com/yourusername/polkadot-x402#readme",
   "dependencies": {
     "@polkadot/api": "^12.0.0",
     "@polkadot/keyring": "^13.0.0",

@@ -37,7 +37,7 @@ export async function signAndSendTransaction(
           nonce: options?.nonce,
           tip: options?.tip,
         },
-        ({ status, txHash }) => {
+        ({ status, txHash }: { status: any; txHash: any }) => {
           if (status.isInBlock || status.isFinalized) {
             resolve(u8aToHex(txHash));
           }
@@ -55,7 +55,7 @@ export async function getAccountNonce(
   address: string
 ): Promise<number> {
   const accountInfo = await api.query.system.account(address);
-  return accountInfo.nonce.toNumber();
+  return (accountInfo as any).nonce.toNumber();
 }
 
 /**
@@ -66,6 +66,6 @@ export async function getAccountBalance(
   address: string
 ): Promise<bigint> {
   const accountInfo = await api.query.system.account(address);
-  return accountInfo.data.free.toBigInt();
+  return (accountInfo as any).data.free.toBigInt();
 }
 
